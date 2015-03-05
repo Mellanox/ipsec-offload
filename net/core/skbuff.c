@@ -3361,7 +3361,7 @@ int skb_gro_receive(struct sk_buff **head, struct sk_buff *skb)
 		int nr_frags = pinfo->nr_frags + i;
 
 		if (nr_frags > MAX_SKB_FRAGS)
-			goto merge;
+			return -E2BIG;
 
 		offset -= headlen;
 		pinfo->nr_frags = nr_frags;
@@ -3394,7 +3394,7 @@ int skb_gro_receive(struct sk_buff **head, struct sk_buff *skb)
 		unsigned int first_offset;
 
 		if (nr_frags + 1 + skbinfo->nr_frags > MAX_SKB_FRAGS)
-			goto merge;
+			return -E2BIG;
 
 		first_offset = skb->data -
 			       (unsigned char *)page_address(page) +
@@ -3414,7 +3414,6 @@ int skb_gro_receive(struct sk_buff **head, struct sk_buff *skb)
 		goto done;
 	}
 
-merge:
 	delta_truesize = skb->truesize;
 	if (offset > headlen) {
 		unsigned int eat = offset - headlen;

@@ -410,7 +410,13 @@ resume:
 		netif_rx(skb);
 		return 0;
 	} else {
-		return x->inner_mode->afinfo->transport_finish(skb, async);
+		err = x->inner_mode->afinfo->transport_finish(skb, async);
+		if (skb->xfrm_gro) {
+			netif_rx(skb);
+			return 0;
+		}
+
+		return err;
 	}
 
 drop_unlock:

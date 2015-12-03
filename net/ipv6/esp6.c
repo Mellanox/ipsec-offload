@@ -146,6 +146,25 @@ static void esp_output_done_esn(struct crypto_async_request *base, int err)
 	esp_output_done(base, err);
 }
 
+static void esp6_encap(struct xfrm_state *x, struct sk_buff *skb)
+{
+	struct ip_esp_hdr *esph;
+	struct ipv6hdr *iph = ipv6_hdr(skb);
+	int proto = iph->nexthdr;
+
+	skb_push(skb, -skb_network_offset(skb));
+	esph = ip_esp_hdr(skb);
+	*skb_mac_header(skb) = IPPROTO_ESP;
+
+	esph->spi = x->id.spi;
+
+	/* save off the next_proto in seq_no to be used in
+	 * esp4_encap() for invoking protocol specific
+	 * segmentation offload.
+	 */
+	esph->seq_no = proto;
+}
+
 static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 {
 	int err;
@@ -164,6 +183,7 @@ static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 	int nfrags;
 	int assoclen;
 	int seqhilen;
+	int proto;
 	u8 *iv;
 	u8 *tail;
 	__be32 *seqhi;
@@ -194,6 +214,7 @@ static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 
 	assoclen = sizeof(*esph);
 	seqhilen = 0;
+	proto = ip_esp_hdr(skb)->seq_no;
 
 	if (x->props.flags & XFRM_STATE_ESN) {
 		seqhilen += sizeof(__be32);
@@ -223,7 +244,12 @@ static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 			tail[i] = i + 1;
 	} while (0);
 	tail[plen - 2] = plen - 2;
-	tail[plen - 1] = *skb_mac_header(skb);
+
+	if (x->xso.offload_handle)
+		tail[plen - 1] = proto;
+	else
+		tail[plen - 1] = *skb_mac_header(skb);
+
 	pskb_put(skb, trailer, clen - skb->len + alen);
 
 	skb_push(skb, -skb_network_offset(skb));
@@ -246,6 +272,11 @@ static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 	}
 
 	esph->spi = x->id.spi;
+
+	if (skb_dst(skb)->dev->features & NETIF_F_HW_ESP) {
+		kfree(tmp);
+		return 0;
+	}
 
 	sg_init_table(sg, nfrags);
 	skb_to_sgvec(skb, sg,
@@ -287,6 +318,7 @@ error:
 static int esp_input_done2(struct sk_buff *skb, int err)
 {
 	struct xfrm_state *x = xfrm_input_state(skb);
+	struct xfrm_offload_state *xo = xfrm_offload_input(skb);
 	struct crypto_aead *aead = x->data;
 	int alen = crypto_aead_authsize(aead);
 	int hlen = sizeof(struct ip_esp_hdr) + crypto_aead_ivsize(aead);
@@ -295,7 +327,8 @@ static int esp_input_done2(struct sk_buff *skb, int err)
 	int padlen;
 	u8 nexthdr[2];
 
-	kfree(ESP_SKB_CB(skb)->tmp);
+	if (!(xo->flags & CRYPTO_DONE))
+		kfree(ESP_SKB_CB(skb)->tmp);
 
 	if (unlikely(err))
 		goto out;
@@ -349,6 +382,18 @@ static void esp_input_done_esn(struct crypto_async_request *base, int err)
 
 	esp_input_restore_header(skb);
 	esp_input_done(base, err);
+}
+
+static int esp6_input_tail(struct xfrm_state *x, struct sk_buff *skb)
+{
+	struct crypto_aead *aead = x->data;
+
+	if (!pskb_may_pull(skb, sizeof(struct ip_esp_hdr) + crypto_aead_ivsize(aead)))
+		return -EINVAL;
+
+	skb->ip_summed = CHECKSUM_NONE;
+
+	return esp_input_done2(skb, 0);
 }
 
 static int esp6_input(struct xfrm_state *x, struct sk_buff *skb)
@@ -675,7 +720,9 @@ static const struct xfrm_type esp6_type = {
 	.destructor	= esp6_destroy,
 	.get_mtu	= esp6_get_mtu,
 	.input		= esp6_input,
+	.input_tail	= esp6_input_tail,
 	.output		= esp6_output,
+	.encap		= esp6_encap,
 	.hdr_offset	= xfrm6_find_1stfragopt,
 };
 

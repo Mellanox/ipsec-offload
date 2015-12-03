@@ -799,6 +799,15 @@ struct tc_to_netdev {
 	};
 };
 
+struct xfrmdev_ops {
+	int			(*xdo_dev_state_add) (struct xfrm_state *x);
+	void			(*xdo_dev_state_delete) (struct xfrm_state *x);
+	int			(*xdo_dev_state_update) (struct xfrm_state *x);
+	int			(*xdo_dev_encap) (struct sk_buff *skb);
+	int			(*xdo_dev_prepare) (struct sk_buff *skb);
+	int			(*xdo_dev_validate) (struct sk_buff *skb);
+	void			(*xdo_dev_resume) (struct sk_buff *skb, int err);
+};
 
 /*
  * This structure defines the management hooks for network devices.
@@ -1657,6 +1666,10 @@ struct net_device {
 #endif
 #if IS_ENABLED(CONFIG_IPV6)
 	const struct ndisc_ops *ndisc_ops;
+#endif
+
+#ifdef CONFIG_XFRM
+	const struct xfrmdev_ops	*xfrmdev_ops;
 #endif
 
 	const struct header_ops *header_ops;

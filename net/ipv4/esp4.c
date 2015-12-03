@@ -128,6 +128,27 @@ static void esp_output_done_esn(struct crypto_async_request *base, int err)
 	esp_output_done(base, err);
 }
 
+
+static void esp4_encap(struct xfrm_state *x, struct sk_buff *skb)
+{
+	struct ip_esp_hdr *esph;
+	struct iphdr *iph = ip_hdr(skb);
+	int proto = iph->protocol;
+
+	skb_push(skb, -skb_network_offset(skb));
+	esph = ip_esp_hdr(skb);
+	*skb_mac_header(skb) = IPPROTO_ESP;
+
+	esph->spi = x->id.spi;
+
+	/* save off the next_proto in seq_no to be used in
+	 * esp4_encap() for invoking protocol specific
+	 * segmentation offload.
+	 */
+	esph->seq_no = proto;
+}
+
+
 static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 {
 	int err;
@@ -149,6 +170,7 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	int nfrags;
 	int assoclen;
 	int extralen;
+	int proto;
 	__be64 seqno;
 
 	/* skb is pure payload to encrypt */
@@ -177,6 +199,7 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 
 	assoclen = sizeof(*esph);
 	extralen = 0;
+	proto = ip_esp_hdr(skb)->seq_no;
 
 	if (x->props.flags & XFRM_STATE_ESN) {
 		extralen += sizeof(*extra);
@@ -206,7 +229,12 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 			tail[i] = i + 1;
 	} while (0);
 	tail[plen - 2] = plen - 2;
-	tail[plen - 1] = *skb_mac_header(skb);
+
+	if (x->xso.offload_handle)
+		tail[plen - 1] = proto;
+	else
+		tail[plen - 1] = *skb_mac_header(skb);
+
 	pskb_put(skb, trailer, clen - skb->len + alen);
 
 	skb_push(skb, -skb_network_offset(skb));
@@ -267,6 +295,11 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 
 	esph->spi = x->id.spi;
 
+	if (skb_dst(skb)->dev->features & NETIF_F_HW_ESP) {
+		kfree(tmp);
+		return 0;
+	}
+
 	sg_init_table(sg, nfrags);
 	skb_to_sgvec(skb, sg,
 		     (unsigned char *)esph - skb->data,
@@ -283,6 +316,7 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	       min(ivlen, 8));
 
 	ESP_SKB_CB(skb)->tmp = tmp;
+
 	err = crypto_aead_encrypt(req);
 
 	switch (err) {
@@ -747,7 +781,8 @@ static const struct xfrm_type esp_type =
 	.destructor	= esp_destroy,
 	.get_mtu	= esp4_get_mtu,
 	.input		= esp_input,
-	.output		= esp_output
+	.output		= esp_output,
+	.encap		= esp4_encap
 };
 
 static struct xfrm4_protocol esp4_protocol = {

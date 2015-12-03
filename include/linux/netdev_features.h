@@ -54,8 +54,9 @@ enum {
 					 */
 	NETIF_F_GSO_TUNNEL_REMCSUM_BIT, /* ... TUNNEL with TSO & REMCSUM */
 	NETIF_F_GSO_SCTP_BIT,		/* ... SCTP fragmentation */
+	NETIF_F_GSO_ESP_BIT,		/* ... ESP with TSO */
 	/**/NETIF_F_GSO_LAST =		/* last bit, see GSO_MASK */
-		NETIF_F_GSO_SCTP_BIT,
+		NETIF_F_GSO_ESP_BIT,
 
 	NETIF_F_FCOE_CRC_BIT,		/* FCoE CRC32 */
 	NETIF_F_SCTP_CRC_BIT,		/* SCTP checksum offload */
@@ -72,6 +73,8 @@ enum {
 	NETIF_F_HW_VLAN_STAG_FILTER_BIT,/* Receive filtering on VLAN STAGs */
 	NETIF_F_HW_L2FW_DOFFLOAD_BIT,	/* Allow L2 Forwarding in Hardware */
 	NETIF_F_BUSY_POLL_BIT,		/* Busy poll */
+	NETIF_F_ESP_BIT,		/* Software ESP transformation offload */
+	NETIF_F_HW_ESP_BIT,		/* Hardware ESP transformation offload */
 
 	NETIF_F_HW_TC_BIT,		/* Offload TC infrastructure */
 
@@ -130,12 +133,15 @@ enum {
 #define NETIF_F_GSO_PARTIAL	 __NETIF_F(GSO_PARTIAL)
 #define NETIF_F_GSO_TUNNEL_REMCSUM __NETIF_F(GSO_TUNNEL_REMCSUM)
 #define NETIF_F_GSO_SCTP	__NETIF_F(GSO_SCTP)
+#define NETIF_F_GSO_ESP		__NETIF_F(GSO_ESP)
 #define NETIF_F_HW_VLAN_STAG_FILTER __NETIF_F(HW_VLAN_STAG_FILTER)
 #define NETIF_F_HW_VLAN_STAG_RX	__NETIF_F(HW_VLAN_STAG_RX)
 #define NETIF_F_HW_VLAN_STAG_TX	__NETIF_F(HW_VLAN_STAG_TX)
 #define NETIF_F_HW_L2FW_DOFFLOAD	__NETIF_F(HW_L2FW_DOFFLOAD)
 #define NETIF_F_BUSY_POLL	__NETIF_F(BUSY_POLL)
 #define NETIF_F_HW_TC		__NETIF_F(HW_TC)
+#define NETIF_F_ESP		__NETIF_F(ESP)
+#define NETIF_F_HW_ESP		__NETIF_F(HW_ESP)
 
 #define for_each_netdev_feature(mask_addr, bit)	\
 	for_each_set_bit(bit, (unsigned long *)mask_addr, NETDEV_FEATURE_COUNT)
@@ -192,7 +198,7 @@ enum {
 #define NETIF_F_UPPER_DISABLES	NETIF_F_LRO
 
 /* changeable features with no special hardware requirements */
-#define NETIF_F_SOFT_FEATURES	(NETIF_F_GSO | NETIF_F_GRO)
+#define NETIF_F_SOFT_FEATURES	(NETIF_F_GSO | NETIF_F_GRO | NETIF_F_ESP)
 
 #define NETIF_F_VLAN_FEATURES	(NETIF_F_HW_VLAN_CTAG_FILTER | \
 				 NETIF_F_HW_VLAN_CTAG_RX | \

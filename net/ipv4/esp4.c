@@ -342,6 +342,7 @@ static int esp_input_done2(struct sk_buff *skb, int err)
 {
 	const struct iphdr *iph;
 	struct xfrm_state *x = xfrm_input_state(skb);
+	struct xfrm_offload_state *xo = xfrm_offload_input(skb);
 	struct crypto_aead *aead = x->data;
 	int alen = crypto_aead_authsize(aead);
 	int hlen = sizeof(struct ip_esp_hdr) + crypto_aead_ivsize(aead);
@@ -350,7 +351,8 @@ static int esp_input_done2(struct sk_buff *skb, int err)
 	u8 nexthdr[2];
 	int padlen;
 
-	kfree(ESP_SKB_CB(skb)->tmp);
+	if (!(xo->flags & CRYPTO_DONE))
+		kfree(ESP_SKB_CB(skb)->tmp);
 
 	if (unlikely(err))
 		goto out;
@@ -443,6 +445,17 @@ static void esp_input_done_esn(struct crypto_async_request *base, int err)
 	esp_input_done(base, err);
 }
 
+static int esp_input_tail(struct xfrm_state *x, struct sk_buff *skb)
+{
+	struct crypto_aead *aead = x->data;
+
+	if (!pskb_may_pull(skb, sizeof(struct ip_esp_hdr) + crypto_aead_ivsize(aead)))
+		return -EINVAL;
+
+	skb->ip_summed = CHECKSUM_NONE;
+
+	return esp_input_done2(skb, 0);
+}
 /*
  * Note: detecting truncated vs. non-truncated authentication data is very
  * expensive, so we only support truncated data, which is the recommended
@@ -781,6 +794,7 @@ static const struct xfrm_type esp_type =
 	.destructor	= esp_destroy,
 	.get_mtu	= esp4_get_mtu,
 	.input		= esp_input,
+	.input_tail	= esp_input_tail,
 	.output		= esp_output,
 	.encap		= esp4_encap
 };

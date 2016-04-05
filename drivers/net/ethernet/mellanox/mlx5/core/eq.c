@@ -151,9 +151,24 @@ static const char *eqe_type_str(u8 type)
 		return "MLX5_EVENT_TYPE_PAGE_REQUEST";
 	case MLX5_EVENT_TYPE_PAGE_FAULT:
 		return "MLX5_EVENT_TYPE_PAGE_FAULT";
+	case MLX5_EVENT_TYPE_FPGA_ERROR:
+		return "MLX5_EVENT_TYPE_FPGA_ERROR";
+	case MLX5_EVENT_TYPE_FPGA_QP_ERROR:
+		return "MLX5_EVENT_TYPE_FPGA_QP_ERROR";
 	default:
 		return "Unrecognized event";
 	}
+}
+
+static enum mlx5_dev_event event_type_to_dev_event(u8 event_type)
+{
+	switch (event_type) {
+	case MLX5_EVENT_TYPE_FPGA_ERROR:
+		return MLX5_DEV_EVENT_FPGA_ERROR;
+	case MLX5_EVENT_TYPE_FPGA_QP_ERROR:
+		return MLX5_DEV_EVENT_FPGA_QP_ERROR;
+	}
+	return -1;
 }
 
 static enum mlx5_dev_event port_subtype_event(u8 subtype)
@@ -285,6 +300,13 @@ static int mlx5_eq_int(struct mlx5_core_dev *dev, struct mlx5_eq *eq)
 			mlx5_eswitch_vport_event(dev->priv.eswitch, eqe);
 			break;
 #endif
+		case MLX5_EVENT_TYPE_FPGA_QP_ERROR:
+		case MLX5_EVENT_TYPE_FPGA_ERROR:
+			if (dev->event)
+				dev->event(dev,
+					   event_type_to_dev_event(eqe->type),
+					   (unsigned long)&eqe->data.raw);
+			break;
 		default:
 			mlx5_core_warn(dev, "Unhandled event 0x%x on EQ 0x%x\n",
 				       eqe->type, eq->eqn);
@@ -479,6 +501,10 @@ int mlx5_start_eqs(struct mlx5_core_dev *dev)
 	    MLX5_CAP_GEN(dev, vport_group_manager) &&
 	    mlx5_core_is_pf(dev))
 		async_event_mask |= (1ull << MLX5_EVENT_TYPE_NIC_VPORT_CHANGE);
+
+	if (MLX5_CAP_GEN(dev, fpga))
+		async_event_mask |= (1ull << MLX5_EVENT_TYPE_FPGA_ERROR) |
+				    (1ull << MLX5_EVENT_TYPE_FPGA_QP_ERROR);
 
 	err = mlx5_create_map_eq(dev, &table->cmd_eq, MLX5_EQ_VEC_CMD,
 				 MLX5_NUM_CMD_EQE, 1ull << MLX5_EVENT_TYPE_CMD,

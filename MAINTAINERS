@@ -7651,6 +7651,16 @@ F:	Documentation/scsi/megaraid.txt
 F:	drivers/scsi/megaraid.*
 F:	drivers/scsi/megaraid/
 
+MELLANOX ETHERNET ACCELERATOR DRIVERS
+M:	Ilan Tayari <ilant@mellanox.com>
+M:	Aviad Yehezkel <aviadye@mellanox.com>
+M:	Ariel Levkovich <lariel@mellanox.com>
+L:	netdev@vger.kernel.org
+S:	Supported
+W:	http://www.mellanox.com
+Q:	http://patchwork.ozlabs.org/project/netdev/list/
+F:	drivers/net/ethernet/mellanox/accelerator/
+
 MELLANOX ETHERNET DRIVER (mlx4_en)
 M:	Tariq Toukan <tariqt@mellanox.com>
 L:	netdev@vger.kernel.org

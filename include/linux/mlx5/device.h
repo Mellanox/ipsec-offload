@@ -278,6 +278,9 @@ enum mlx5_event {
 
 	MLX5_EVENT_TYPE_PAGE_FAULT	   = 0xc,
 	MLX5_EVENT_TYPE_NIC_VPORT_CHANGE   = 0xd,
+
+	MLX5_EVENT_TYPE_FPGA_ERROR         = 0x20,
+	MLX5_EVENT_TYPE_FPGA_QP_ERROR      = 0x21,
 };
 
 enum {
@@ -845,6 +848,15 @@ enum {
 	MLX5_L3_PROT_TYPE_IPV4		= 0,
 	MLX5_L3_PROT_TYPE_IPV6		= 1,
 };
+
+#define MLX5_CAP_FPGA(mdev, cap) \
+	MLX5_GET(fpga_cap, mdev->fpga_caps, cap)
+
+#define MLX5_CAP64_FPGA(mdev, cap) \
+	MLX5_GET64(fpga_cap, mdev->fpga_caps, cap)
+
+#define MLX5_CAP_FPGA_SHELL(mdev, cap) \
+	MLX5_GET(fpga_cap, mdev->fpga_caps, shell_caps.cap)
 
 enum {
 	MLX5_L4_PROT_TYPE_TCP		= 0,

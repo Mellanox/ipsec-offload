@@ -47,6 +47,7 @@
 #include <linux/mlx5/device.h>
 #include <linux/mlx5/doorbell.h>
 #include <linux/mlx5/srq.h>
+#include <linux/mlx5/accel/accel_sdk.h>
 
 enum {
 	MLX5_BOARD_ID_LEN = 64,
@@ -104,6 +105,9 @@ enum {
 enum {
 	MLX5_REG_QETCR		 = 0x4005,
 	MLX5_REG_QTCT		 = 0x400a,
+	MLX5_REG_FPGA_CAP			 = 0x4022,
+	MLX5_REG_FPGA_CTRL			 = 0x4023,
+	MLX5_REG_FPGA_ACCESS_REG	 = 0x4024,
 	MLX5_REG_PCAP		 = 0x5001,
 	MLX5_REG_PMTU		 = 0x5003,
 	MLX5_REG_PTYS		 = 0x5004,
@@ -163,6 +167,8 @@ enum mlx5_dev_event {
 	MLX5_DEV_EVENT_PKEY_CHANGE,
 	MLX5_DEV_EVENT_GUID_CHANGE,
 	MLX5_DEV_EVENT_CLIENT_REREG,
+	MLX5_DEV_EVENT_FPGA_ERROR,
+	MLX5_DEV_EVENT_FPGA_QP_ERROR,
 };
 
 enum mlx5_port_status {
@@ -596,6 +602,7 @@ struct mlx5_core_dev {
 	struct mlx5_port_caps	port_caps[MLX5_MAX_PORTS];
 	u32 hca_caps_cur[MLX5_CAP_NUM][MLX5_UN_SZ_DW(hca_cap_union)];
 	u32 hca_caps_max[MLX5_CAP_NUM][MLX5_UN_SZ_DW(hca_cap_union)];
+	u32			fpga_caps[MLX5_ST_SZ_DW(fpga_cap)];
 	phys_addr_t		iseg_base;
 	struct mlx5_init_seg __iomem *iseg;
 	enum mlx5_device_state	state;
@@ -710,6 +717,54 @@ struct mlx5_hca_vport_context {
 	u16			qkey_violation_counter;
 	u16			pkey_violation_counter;
 	bool			grh_required;
+};
+
+enum mlx5_fpga_qp_state {
+	MLX5_FPGA_QP_STATE_INIT = 0,
+	MLX5_FPGA_QP_STATE_ACTIVE = 1,
+	MLX5_FPGA_QP_STATE_ERROR = 2,
+};
+
+enum mlx5_fpga_qp_type {
+	MLX5_FPGA_QP_TYPE_SHELL = 0,
+	MLX5_FPGA_QP_TYPE_SANDBOX = 1,
+};
+
+enum mlx5_fpga_qp_service_type {
+	MLX5_FPGA_QP_SERVICE_TYPE_RC = 0,
+};
+
+enum mlx5_fpga_qpc_field_select {
+	MLX5_FPGA_QPC_STATE = BIT(0),
+};
+
+struct mlx5_fpga_qpc {
+	enum mlx5_fpga_qp_state		state;
+	enum mlx5_fpga_qp_type		qp_type;
+	enum mlx5_fpga_qp_service_type	st;
+	u8				tclass;
+	u16				ether_type;
+	u8				pcp;
+	u8				dei;
+	u16				vlan_id;
+	u32				next_rcv_psn;
+	u32				next_send_psn;
+	u16				pkey;
+	u32				remote_qpn;
+	u8				rnr_retry;
+	u8				retry_count;
+	u8				remote_mac[ETH_ALEN];
+	struct in6_addr			remote_ip;
+	u8				fpga_mac[ETH_ALEN];
+	struct in6_addr			fpga_ip;
+};
+
+struct mlx5_fpga_qp_counters {
+	u64 rx_ack_packets;
+	u64 rx_send_packets;
+	u64 tx_ack_packets;
+	u64 tx_send_packets;
+	u64 rx_total_drop;
 };
 
 static inline void *mlx5_buf_offset(struct mlx5_buf *buf, int offset)
@@ -892,6 +947,28 @@ void mlx5_cleanup_rl_table(struct mlx5_core_dev *dev);
 int mlx5_rl_add_rate(struct mlx5_core_dev *dev, u32 rate, u16 *index);
 void mlx5_rl_remove_rate(struct mlx5_core_dev *dev, u32 rate);
 bool mlx5_rl_is_in_range(struct mlx5_core_dev *dev, u32 rate);
+
+int mlx5_fpga_caps(struct mlx5_core_dev *dev, u32 *caps);
+int mlx5_fpga_access_reg(struct mlx5_core_dev *dev, u8 size, u64 addr,
+			 u8 *buf, bool write);
+int mlx5_fpga_load(struct mlx5_core_dev *dev, enum mlx_accel_fpga_image image);
+int mlx5_fpga_ctrl_op(struct mlx5_core_dev *dev, u8 op);
+int mlx5_fpga_image_select(struct mlx5_core_dev *dev,
+			   enum mlx_accel_fpga_image image);
+int mlx5_fpga_query(struct mlx5_core_dev *dev,
+		    enum mlx_accel_fpga_status *status,
+		    enum mlx_accel_fpga_image *admin_image,
+		    enum mlx_accel_fpga_image *oper_image);
+int mlx5_fpga_create_qp(struct mlx5_core_dev *dev,
+			struct mlx5_fpga_qpc *fpga_qpc, u32 *fpga_qpn);
+int mlx5_fpga_modify_qp(struct mlx5_core_dev *dev, u32 fpga_qpn,
+			enum mlx5_fpga_qpc_field_select fields,
+			struct mlx5_fpga_qpc *fpga_qpc);
+int mlx5_fpga_query_qp(struct mlx5_core_dev *dev, u32 fpga_qpn,
+		       struct mlx5_fpga_qpc *fpga_qpc);
+int mlx5_fpga_query_qp_counters(struct mlx5_core_dev *dev, u32 fpga_qpn,
+				bool clear, struct mlx5_fpga_qp_counters *data);
+int mlx5_fpga_destroy_qp(struct mlx5_core_dev *dev, u32 fpga_qpn);
 
 static inline int fw_initializing(struct mlx5_core_dev *dev)
 {

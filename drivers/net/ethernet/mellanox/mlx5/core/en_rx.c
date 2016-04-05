@@ -783,9 +783,21 @@ static inline void mlx5e_complete_rx_cqe(struct mlx5e_rq *rq,
 					 u32 cqe_bcnt,
 					 struct sk_buff *skb)
 {
+	struct mlx5e_accel_client_ops *accel_client_ops;
+
 	rq->stats.packets++;
 	rq->stats.bytes += cqe_bcnt;
 	mlx5e_build_rx_skb(cqe, cqe_bcnt, rq, skb);
+
+	rcu_read_lock();
+	accel_client_ops = rcu_dereference(rq->priv->accel_client_ops);
+	skb = accel_client_ops->rx_handler(skb);
+	if (!skb) {
+		rcu_read_unlock();
+		return;
+	}
+	rcu_read_unlock();
+
 	napi_gro_receive(rq->cq.napi, skb);
 }
 

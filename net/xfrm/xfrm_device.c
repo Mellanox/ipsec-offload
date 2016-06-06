@@ -135,7 +135,7 @@ error:
 }
 EXPORT_SYMBOL(xfrm_dev_encap);
 
-int xfrm_dev_register(struct net_device *dev)
+static int xfrm_dev_register(struct net_device *dev)
 {
 	if ((dev->features & NETIF_F_HW_ESP) && !dev->xfrmdev_ops)
 		return NOTIFY_BAD;

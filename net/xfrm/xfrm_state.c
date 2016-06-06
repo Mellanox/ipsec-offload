@@ -323,6 +323,19 @@ retry:
 	return mode;
 }
 
+static void xfrm_state_free_offload(struct xfrm_state *x)
+{
+	struct xfrm_state_offload *xso = &x->xso;
+
+	if (xso->dev) {
+		struct net_device *dev = xso->dev;
+
+		dev->xfrmdev_ops->xdo_dev_state_free(x);
+		xso->dev = NULL;
+		dev_put(dev);
+	}
+}
+
 static void xfrm_put_mode(struct xfrm_mode *mode)
 {
 	module_put(mode->owner);
@@ -349,6 +362,7 @@ static void xfrm_state_gc_destroy(struct xfrm_state *x)
 		x->type->destructor(x);
 		xfrm_put_type(x->type);
 	}
+	xfrm_state_free_offload(x);
 	security_xfrm_state_free(x);
 	kfree(x);
 }
@@ -528,13 +542,8 @@ int __xfrm_state_delete(struct xfrm_state *x)
 		net->xfrm.state_num--;
 		spin_unlock(&net->xfrm.xfrm_state_lock);
 
-		if (xso->dev) {
-			struct net_device *dev = xso->dev;
-
-			dev->xfrmdev_ops->xdo_dev_state_delete(x);
-			xso->dev = NULL;
-			dev_put(dev);
-		}
+		if (xso->dev)
+			xso->dev->xfrmdev_ops->xdo_dev_state_delete(x);
 
 		/* All xfrm_state objects are created by xfrm_state_alloc.
 		 * The xfrm_state_alloc call gives a reference, and that

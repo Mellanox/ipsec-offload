@@ -559,6 +559,83 @@ static void xfrm_replay_advance_esn(struct xfrm_state *x, __be32 net_seq)
 		x->repl->notify(x, XFRM_REPLAY_UPDATE);
 }
 
+static int xfrm_replay_overflow_offload(struct xfrm_state *x, struct sk_buff *skb)
+{
+	int err = 0;
+	struct net *net = xs_net(x);
+	struct sec_path *sp = skb->sp;
+	__u32 oseq = x->replay.oseq;
+
+	if (!sp)
+		return xfrm_replay_overflow(x, skb);
+
+	if (x->type->flags & XFRM_TYPE_REPLAY_PROT) {
+		if (!skb_is_gso(skb)) {
+			XFRM_SKB_CB(skb)->seq.output.low = ++oseq;
+			sp->seq.low = oseq;
+		} else {
+			XFRM_SKB_CB(skb)->seq.output.low = oseq + 1;
+			sp->seq.low = oseq + 1;
+			oseq += skb_shinfo(skb)->gso_segs;
+		}
+
+		XFRM_SKB_CB(skb)->seq.output.hi = 0;
+		sp->seq.hi = 0;
+		if (unlikely(oseq < x->replay.oseq)) {
+			xfrm_audit_state_replay_overflow(x, skb);
+			err = -EOVERFLOW;
+
+			return err;
+		}
+
+		x->replay.oseq = oseq;
+
+		if (xfrm_aevent_is_on(net))
+			x->repl->notify(x, XFRM_REPLAY_UPDATE);
+	}
+
+	return err;
+}
+
+static int xfrm_replay_overflow_offload_bmp(struct xfrm_state *x, struct sk_buff *skb)
+{
+	int err = 0;
+	struct sec_path *sp = skb->sp;
+	struct xfrm_replay_state_esn *replay_esn = x->replay_esn;
+	struct net *net = xs_net(x);
+	__u32 oseq = replay_esn->oseq;
+
+	if (!sp)
+		return xfrm_replay_overflow_bmp(x, skb);
+
+	if (x->type->flags & XFRM_TYPE_REPLAY_PROT) {
+		if (!skb_is_gso(skb)) {
+			XFRM_SKB_CB(skb)->seq.output.low = ++oseq;
+			sp->seq.low = oseq;
+		} else {
+			XFRM_SKB_CB(skb)->seq.output.low = oseq + 1;
+			sp->seq.low = oseq + 1;
+			oseq += skb_shinfo(skb)->gso_segs;
+		}
+
+		XFRM_SKB_CB(skb)->seq.output.hi = 0;
+		sp->seq.hi = 0;
+		if (unlikely(oseq < replay_esn->oseq)) {
+			xfrm_audit_state_replay_overflow(x, skb);
+			err = -EOVERFLOW;
+
+			return err;
+		} else {
+			replay_esn->oseq = oseq;
+		}
+
+		if (xfrm_aevent_is_on(net))
+			x->repl->notify(x, XFRM_REPLAY_UPDATE);
+	}
+
+	return err;
+}
+
 static const struct xfrm_replay xfrm_replay_legacy = {
 	.advance	= xfrm_replay_advance,
 	.check		= xfrm_replay_check,
@@ -567,12 +644,28 @@ static const struct xfrm_replay xfrm_replay_legacy = {
 	.overflow	= xfrm_replay_overflow,
 };
 
+static const struct xfrm_replay xfrm_replay_offload_legacy = {
+	.advance	= xfrm_replay_advance,
+	.check		= xfrm_replay_check,
+	.recheck	= xfrm_replay_check,
+	.notify		= xfrm_replay_notify,
+	.overflow	= xfrm_replay_overflow_offload,
+};
+
 static const struct xfrm_replay xfrm_replay_bmp = {
 	.advance	= xfrm_replay_advance_bmp,
 	.check		= xfrm_replay_check_bmp,
 	.recheck	= xfrm_replay_check_bmp,
 	.notify		= xfrm_replay_notify_bmp,
 	.overflow	= xfrm_replay_overflow_bmp,
+};
+
+static const struct xfrm_replay xfrm_replay_offload = {
+	.advance	= xfrm_replay_advance_bmp,
+	.check		= xfrm_replay_check_bmp,
+	.recheck	= xfrm_replay_check_bmp,
+	.notify		= xfrm_replay_notify_bmp,
+	.overflow	= xfrm_replay_overflow_offload_bmp,
 };
 
 static const struct xfrm_replay xfrm_replay_esn = {
@@ -596,10 +689,16 @@ int xfrm_init_replay(struct xfrm_state *x)
 			if (replay_esn->replay_window == 0)
 				return -EINVAL;
 			x->repl = &xfrm_replay_esn;
-		} else
+		} else if (x->xso.offload_handle) {
+			x->repl = &xfrm_replay_offload;
+		} else {
 			x->repl = &xfrm_replay_bmp;
-	} else
+		}
+	} else if (x->xso.offload_handle) {
+		x->repl = &xfrm_replay_offload_legacy;
+	} else {
 		x->repl = &xfrm_replay_legacy;
+	}
 
 	return 0;
 }

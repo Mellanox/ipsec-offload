@@ -558,6 +558,42 @@ static void xfrm_replay_advance_esn(struct xfrm_state *x, __be32 net_seq)
 		x->repl->notify(x, XFRM_REPLAY_UPDATE);
 }
 
+static int xfrm_replay_overflow_offload(struct xfrm_state *x, struct sk_buff *skb)
+{
+	int err = 0;
+	int seq;
+	struct xfrm_replay_state_esn *replay_esn = x->replay_esn;
+	struct net *net = xs_net(x);
+	__u32 oseq = replay_esn->oseq;
+
+	if (x->type->flags & XFRM_TYPE_REPLAY_PROT) {
+		if (!skb_is_gso(skb)) {
+			XFRM_SKB_CB(skb)->seq.output.low = ++oseq;
+		} else {
+			seq = (skb->len / skb_shinfo(skb)->gso_size);
+
+			XFRM_SKB_CB(skb)->seq.output.low = oseq + 1;
+			oseq += seq;
+		}
+
+		XFRM_SKB_CB(skb)->seq.output.hi = 0;
+		if (unlikely(oseq < replay_esn->oseq)) {
+			xfrm_audit_state_replay_overflow(x, skb);
+			err = -EOVERFLOW;
+
+			return err;
+		} else {
+			replay_esn->oseq += oseq;
+		}
+
+		if (xfrm_aevent_is_on(net))
+			x->repl->notify(x, XFRM_REPLAY_UPDATE);
+	}
+
+	return err;
+}
+
+
 static struct xfrm_replay xfrm_replay_legacy = {
 	.advance	= xfrm_replay_advance,
 	.check		= xfrm_replay_check,
@@ -573,6 +609,15 @@ static struct xfrm_replay xfrm_replay_bmp = {
 	.notify		= xfrm_replay_notify_bmp,
 	.overflow	= xfrm_replay_overflow_bmp,
 };
+
+static struct xfrm_replay xfrm_replay_offload = {
+	.advance	= xfrm_replay_advance_bmp,
+	.check		= xfrm_replay_check_bmp,
+	.recheck	= xfrm_replay_check_bmp,
+	.notify		= xfrm_replay_notify_bmp,
+	.overflow	= xfrm_replay_overflow_offload,
+};
+
 
 static struct xfrm_replay xfrm_replay_esn = {
 	.advance	= xfrm_replay_advance_esn,
@@ -595,7 +640,9 @@ int xfrm_init_replay(struct xfrm_state *x)
 			if (replay_esn->replay_window == 0)
 				return -EINVAL;
 			x->repl = &xfrm_replay_esn;
-		} else
+		} else if (x->xso.offload_handle)
+			x->repl = &xfrm_replay_offload;
+		else
 			x->repl = &xfrm_replay_bmp;
 	} else
 		x->repl = &xfrm_replay_legacy;

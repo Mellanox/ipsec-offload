@@ -44,6 +44,7 @@
 #include <linux/types.h>
 #include <linux/mlx5/transobj.h>
 #include <rdma/ib_user_verbs.h>
+#include <linux/mlx5_ib/driver.h>
 
 #define mlx5_ib_dbg(dev, format, arg...)				\
 pr_debug("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name, __func__,	\
@@ -492,6 +493,10 @@ enum {
 	MLX5_FMR_BUSY,
 };
 
+enum {
+	MLX5_MAX_RESERVED_GIDS = 8,
+};
+
 struct mlx5_cache_ent {
 	struct list_head	head;
 	/* sync access to the cahce entry
@@ -555,6 +560,12 @@ struct mlx5_roce {
 	struct notifier_block	nb;
 };
 
+struct mlx5_ib_reserved_gids {
+	unsigned int	count;
+	bool		used[MLX5_MAX_RESERVED_GIDS];
+	struct mutex	mutex;
+};
+
 struct mlx5_ib_dev {
 	struct ib_device		ib_dev;
 	struct mlx5_core_dev		*mdev;
@@ -581,6 +592,7 @@ struct mlx5_ib_dev {
 	struct srcu_struct      mr_srcu;
 #endif
 	struct mlx5_ib_flow_db	flow_db;
+	struct mlx5_ib_reserved_gids	reserved_gids;
 };
 
 static inline struct mlx5_ib_cq *to_mibcq(struct mlx5_core_cq *mcq)
@@ -762,6 +774,10 @@ int mlx5_mr_cache_cleanup(struct mlx5_ib_dev *dev);
 int mlx5_mr_ib_cont_pages(struct ib_umem *umem, u64 addr, int *count, int *shift);
 int mlx5_ib_check_mr_status(struct ib_mr *ibmr, u32 check_mask,
 			    struct ib_mr_status *mr_status);
+int mlx5_ib_set_roce_gid(struct mlx5_core_dev *dev, unsigned int index,
+			 enum ib_gid_type gid_type, const union ib_gid *gid,
+			 const u8 *mac, bool vlan, u16 vlan_id);
+void mlx5_ib_reserved_gid_init(struct mlx5_ib_dev *dev);
 
 #ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 extern struct workqueue_struct *mlx5_ib_page_fault_wq;

@@ -336,7 +336,19 @@ dma_unmap_wqe_err:
 netdev_tx_t mlx5e_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
-	struct mlx5e_sq *sq = priv->txq_to_sq_map[skb_get_queue_mapping(skb)];
+	struct mlx5e_sq *sq = NULL;
+	struct mlx5e_accel_client_ops *accel_client_ops;
+
+	rcu_read_lock();
+	accel_client_ops = rcu_dereference(priv->accel_client_ops);
+	skb = accel_client_ops->tx_handler(skb);
+	if (!skb) {
+		rcu_read_unlock();
+		return NETDEV_TX_OK;
+	}
+	rcu_read_unlock();
+
+	sq = priv->txq_to_sq_map[skb_get_queue_mapping(skb)];
 
 	return mlx5e_sq_xmit(sq, skb);
 }

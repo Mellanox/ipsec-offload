@@ -295,7 +295,7 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 
 	esph->spi = x->id.spi;
 
-	if (skb_dst(skb)->dev->features & NETIF_F_HW_ESP) {
+	if (x->xso.offload_handle) {
 		kfree(tmp);
 		return 0;
 	}

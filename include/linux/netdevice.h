@@ -807,8 +807,6 @@ struct xfrmdev_ops {
 	int			(*xdo_dev_state_update) (struct xfrm_state *x);
 	int			(*xdo_dev_encap) (struct sk_buff *skb);
 	int			(*xdo_dev_prepare) (struct sk_buff *skb);
-	int			(*xdo_dev_validate) (struct sk_buff *skb);
-	void			(*xdo_dev_resume) (struct sk_buff *skb, int err);
 };
 
 /*

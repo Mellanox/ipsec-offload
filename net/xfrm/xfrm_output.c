@@ -185,54 +185,10 @@ static int xfrm_output_gso(struct net *net, struct sock *sk, struct sk_buff *skb
 	return 0;
 }
 
-static int xfrm_output_dev(struct net *net, struct sock *sk, struct sk_buff *skb)
-{
-	int err;
-	struct net_device *dev = skb_dst(skb)->dev;
-
-
-	if (skb_is_gso(skb)) {
-		skb_shinfo(skb)->gso_type |= SKB_GSO_ESP;
-
-		err = dev->xfrmdev_ops->xdo_dev_encap(skb);
-		if (err)
-			return err;
-	} else {
-		/* NETIF_F_HW_ESP */
-		if (skb->ip_summed == CHECKSUM_PARTIAL) {
-			err = skb_checksum_help(skb);
-			if (err) {
-				XFRM_INC_STATS(net, LINUX_MIB_XFRMOUTERROR);
-				kfree_skb(skb);
-				return err;
-			}
-		}
-
-		err = dev->xfrmdev_ops->xdo_dev_encap(skb);
-		if (err)
-			return err;
-
-		err = dev->xfrmdev_ops->xdo_dev_prepare(skb);
-		if (err)
-			return err;
-	}
-
-	err = skb_dst(skb)->ops->local_out(net, skb->sk, skb);
-	if (unlikely(err != 1))
-		return err;
-
-	return skb_dst(skb)->path->output(net, skb->sk, skb);
-}
-
 int xfrm_output(struct sock *sk, struct sk_buff *skb)
 {
 	struct net *net = dev_net(skb_dst(skb)->dev);
 	int err;
-
-	/* XXX: Add [PATCH 3/7] xfrm: Tx Offload Checks */
-
-	if (skb_dst(skb)->xfrm->xso.offload_handle)
-		return xfrm_output_dev(net, sk, skb);
 
 	if (skb_is_gso(skb))
 		return xfrm_output_gso(net, sk, skb);

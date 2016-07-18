@@ -128,27 +128,6 @@ static void esp_output_done_esn(struct crypto_async_request *base, int err)
 	esp_output_done(base, err);
 }
 
-
-static void esp4_encap(struct xfrm_state *x, struct sk_buff *skb)
-{
-	struct ip_esp_hdr *esph;
-	struct iphdr *iph = ip_hdr(skb);
-	int proto = iph->protocol;
-
-	skb_push(skb, -skb_network_offset(skb));
-	esph = ip_esp_hdr(skb);
-	*skb_mac_header(skb) = IPPROTO_ESP;
-
-	esph->spi = x->id.spi;
-
-	/* save off the next_proto in seq_no to be used in
-	 * esp4_encap() for invoking protocol specific
-	 * segmentation offload.
-	 */
-	esph->seq_no = proto;
-}
-
-
 static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 {
 	int err;
@@ -170,7 +149,6 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	int nfrags;
 	int assoclen;
 	int extralen;
-	int proto;
 	__be64 seqno;
 
 	/* skb is pure payload to encrypt */
@@ -199,7 +177,6 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 
 	assoclen = sizeof(*esph);
 	extralen = 0;
-	proto = ip_esp_hdr(skb)->seq_no;
 
 	if (x->props.flags & XFRM_STATE_ESN) {
 		extralen += sizeof(*extra);
@@ -229,11 +206,7 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 			tail[i] = i + 1;
 	} while (0);
 	tail[plen - 2] = plen - 2;
-
-	if (x->xso.offload_handle)
-		tail[plen - 1] = proto;
-	else
-		tail[plen - 1] = *skb_mac_header(skb);
+	tail[plen - 1] = *skb_mac_header(skb);
 
 	pskb_put(skb, trailer, clen - skb->len + alen);
 
@@ -796,7 +769,6 @@ static const struct xfrm_type esp_type =
 	.input		= esp_input,
 	.input_tail	= esp_input_tail,
 	.output		= esp_output,
-	.encap		= esp4_encap
 };
 
 static struct xfrm4_protocol esp4_protocol = {

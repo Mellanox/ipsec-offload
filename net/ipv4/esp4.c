@@ -269,8 +269,10 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	esph->spi = x->id.spi;
 
 	if (x->xso.offload_handle) {
-		kfree(tmp);
-		return 0;
+		if (x->xso.dev->xfrmdev_ops->xdo_dev_crypto(skb)) {
+			kfree(tmp);
+			return 0;
+		}
 	}
 
 	sg_init_table(sg, nfrags);

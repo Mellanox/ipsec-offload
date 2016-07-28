@@ -120,6 +120,13 @@ struct xfrm_state_walk {
 	struct xfrm_address_filter *filter;
 };
 
+struct xfrm_state_offload {
+	struct net_device	*dev;
+	unsigned long		offload_handle;
+	unsigned int		num_exthdrs;
+	u8			flags;
+};
+
 /* Full description of state of transformer. */
 struct xfrm_state {
 	possible_net_t		xs_net;
@@ -206,6 +213,8 @@ struct xfrm_state {
 
 	struct xfrm_lifetime_cur curlft;
 	struct tasklet_hrtimer	mtimer;
+
+	struct xfrm_state_offload xso;
 
 	/* used to fix curlft->add_time when changing date */
 	long		saved_tmo;
@@ -373,6 +382,7 @@ struct xfrm_type {
 	void			(*destructor)(struct xfrm_state *);
 	int			(*input)(struct xfrm_state *, struct sk_buff *skb);
 	void			(*encap)(struct xfrm_state *, struct sk_buff *pskb);
+	int			(*input_tail)(struct xfrm_state *x, struct sk_buff *skb);
 	int			(*output)(struct xfrm_state *, struct sk_buff *pskb);
 	int			(*reject)(struct xfrm_state *, struct sk_buff *,
 					  const struct flowi *);
@@ -977,6 +987,22 @@ static inline void xfrm_dst_destroy(struct xfrm_dst *xdst)
 
 void xfrm_dst_ifdown(struct dst_entry *dst, struct net_device *dev);
 
+struct xfrm_offload_state {
+	u32			flags;
+#define	SA_DELETE_REQ		1
+#define	CRYPTO_DONE		2
+#define	CRYPTO_NEXT_DONE	4
+	u32			status;
+#define CRYPTO_SUCCESS				1
+#define CRYPTO_GENERIC_ERROR			2
+#define CRYPTO_TRANSPORT_AH_AUTH_FAILED		4
+#define CRYPTO_TRANSPORT_ESP_AUTH_FAILED	8
+#define CRYPTO_TUNNEL_AH_AUTH_FAILED		16
+#define CRYPTO_TUNNEL_ESP_AUTH_FAILED		32
+#define CRYPTO_INVALID_PACKET_SYNTAX		64
+#define CRYPTO_INVALID_PROTOCOL			128
+};
+
 struct sec_path {
 	atomic_t		refcnt;
 	int			len;
@@ -988,6 +1014,7 @@ struct sec_path {
 	} seq;
 
 	struct xfrm_state		*xvec[XFRM_MAX_DEPTH];
+	struct xfrm_offload_state	ovec[XFRM_MAX_DEPTH];
 
 	__u8				proto;
 	__u8				flags;
@@ -1514,6 +1541,7 @@ struct xfrmk_spdinfo {
 struct xfrm_state *xfrm_find_acq_byseq(struct net *net, u32 mark, u32 seq);
 int xfrm_state_delete(struct xfrm_state *x);
 int xfrm_state_flush(struct net *net, u8 proto, bool task_valid);
+int xfrm_dev_state_flush(struct net *net, struct net_device *dev, bool task_valid);
 void xfrm_sad_getinfo(struct net *net, struct xfrmk_sadinfo *si);
 void xfrm_spd_getinfo(struct net *net, struct xfrmk_spdinfo *si);
 u32 xfrm_replay_seqhi(struct xfrm_state *x, __be32 net_seq);
@@ -1592,6 +1620,11 @@ static inline int xfrm4_udp_encap_rcv(struct sock *sk, struct sk_buff *skb)
 	return 0;
 }
 #endif
+
+struct dst_entry *__xfrm_dst_lookup(struct net *net, int tos, int oif,
+				    const xfrm_address_t *saddr,
+				    const xfrm_address_t *daddr,
+				    int family);
 
 struct xfrm_policy *xfrm_policy_alloc(struct net *net, gfp_t gfp);
 
@@ -1786,6 +1819,13 @@ static inline void xfrm_states_delete(struct xfrm_state **states, int n)
 static inline struct xfrm_state *xfrm_input_state(struct sk_buff *skb)
 {
 	return skb->sp->xvec[skb->sp->len - 1];
+}
+static inline struct xfrm_offload_state *xfrm_offload_input(struct sk_buff *skb)
+{
+	if (!skb->sp)
+		return NULL;
+
+	return &skb->sp->ovec[skb->sp->len - 1];
 }
 #endif
 

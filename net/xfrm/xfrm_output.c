@@ -102,9 +102,13 @@ static int xfrm_output_one(struct sk_buff *skb, int err)
 		/* Inner headers are invalid now. */
 		skb->encapsulation = 0;
 
-		err = x->type->output(x, skb);
-		if (err == -EINPROGRESS)
-			goto out;
+		if (skb_shinfo(skb)->gso_type & SKB_GSO_ESP) {
+			x->type->encap(x, skb);
+		} else {
+			err = x->type->output(x, skb);
+			if (err == -EINPROGRESS)
+				goto out;
+		}
 
 resume:
 		if (err) {
@@ -197,10 +201,63 @@ static int xfrm_output_gso(struct net *net, struct sock *sk, struct sk_buff *skb
 	return 0;
 }
 
+static bool xfrm_offload_ok(struct sk_buff *skb, struct xfrm_state *x)
+{
+	int mtu;
+	struct dst_entry *dst = skb_dst(skb);
+	struct xfrm_dst *xdst = (struct xfrm_dst *)dst;
+
+	if (unlikely(IPCB(skb)->flags & IPSKB_REROUTED))
+		return false;
+
+	if (x->xso.offload_handle && (x->xso.dev == dst->path->dev)
+	    && !dst->child->xfrm && x->type->get_mtu) {
+		mtu = x->type->get_mtu(x, xdst->child_mtu_cached);
+
+		if (skb->len <= mtu)
+			goto ok;
+
+		if (skb_is_gso(skb) && skb_gso_validate_mtu(skb, mtu))
+			goto ok;
+	}
+	return false;
+
+ok:
+	return x->xso.dev->xfrmdev_ops->xdo_dev_offload_ok(skb, x);
+}
+
 int xfrm_output(struct sock *sk, struct sk_buff *skb)
 {
 	struct net *net = dev_net(skb_dst(skb)->dev);
+	struct xfrm_state *x = skb_dst(skb)->xfrm;
 	int err;
+
+	secpath_reset(skb);
+
+	if (xfrm_offload_ok(skb, x)) {
+		struct sec_path *sp;
+
+		sp = secpath_dup(skb->sp);
+		if (!sp) {
+			XFRM_INC_STATS(net, LINUX_MIB_XFRMOUTERROR);
+			err = -ENOMEM;
+			return err;
+		}
+		if (skb->sp)
+			secpath_put(skb->sp);
+		skb->sp = sp;
+
+		skb->sp->xvec[skb->sp->len++] = x;
+		xfrm_state_hold(x);
+
+		if (skb_is_gso(skb)) {
+			skb_shinfo(skb)->gso_type |= SKB_GSO_ESP;
+
+			return xfrm_output2(net, sk, skb);
+		}
+		if (x->xso.dev->features & NETIF_F_HW_ESP_TX_CSUM)
+			goto out;
+	}
 
 	if (skb_is_gso(skb))
 		return xfrm_output_gso(net, sk, skb);
@@ -214,6 +271,7 @@ int xfrm_output(struct sock *sk, struct sk_buff *skb)
 		}
 	}
 
+out:
 	return xfrm_output2(net, sk, skb);
 }
 EXPORT_SYMBOL_GPL(xfrm_output);

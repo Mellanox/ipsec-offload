@@ -341,6 +341,19 @@ retry:
 	return mode;
 }
 
+static void xfrm_state_free_offload(struct xfrm_state *x)
+{
+	struct xfrm_state_offload *xso = &x->xso;
+
+	if (xso->dev) {
+		struct net_device *dev = xso->dev;
+
+		dev->xfrmdev_ops->xdo_dev_state_free(x);
+		xso->dev = NULL;
+		dev_put(dev);
+	}
+}
+
 static void xfrm_put_mode(struct xfrm_mode *mode)
 {
 	module_put(mode->owner);
@@ -367,6 +380,7 @@ static void xfrm_state_gc_destroy(struct xfrm_state *x)
 		x->type->destructor(x);
 		xfrm_put_type(x->type);
 	}
+	xfrm_state_free_offload(x);
 	security_xfrm_state_free(x);
 	kfree(x);
 }
@@ -531,6 +545,7 @@ EXPORT_SYMBOL(__xfrm_state_destroy);
 int __xfrm_state_delete(struct xfrm_state *x)
 {
 	struct net *net = xs_net(x);
+	struct xfrm_state_offload *xso = &x->xso;
 	int err = -ESRCH;
 
 	if (x->km.state != XFRM_STATE_DEAD) {
@@ -543,6 +558,9 @@ int __xfrm_state_delete(struct xfrm_state *x)
 			hlist_del_rcu(&x->byspi);
 		net->xfrm.state_num--;
 		spin_unlock(&net->xfrm.xfrm_state_lock);
+
+		if (xso->dev)
+			xso->dev->xfrmdev_ops->xdo_dev_state_delete(x);
 
 		/* All xfrm_state objects are created by xfrm_state_alloc.
 		 * The xfrm_state_alloc call gives a reference, and that
@@ -588,9 +606,38 @@ xfrm_state_flush_secctx_check(struct net *net, u8 proto, bool task_valid)
 
 	return err;
 }
+
+static inline int
+xfrm_dev_state_flush_secctx_check(struct net *net, struct net_device *dev, bool task_valid)
+{
+	int i, err = 0;
+
+	for (i = 0; i <= net->xfrm.state_hmask; i++) {
+		struct xfrm_state *x;
+		struct xfrm_state_offload *xso;
+
+		hlist_for_each_entry(x, net->xfrm.state_bydst+i, bydst) {
+			xso = &x->xso;
+
+			if (xso->dev == dev &&
+			   (err = security_xfrm_state_delete(x)) != 0) {
+				xfrm_audit_state_delete(x, 0, task_valid);
+				return err;
+			}
+		}
+	}
+
+	return err;
+}
 #else
 static inline int
 xfrm_state_flush_secctx_check(struct net *net, u8 proto, bool task_valid)
+{
+	return 0;
+}
+
+static inline int
+xfrm_dev_state_flush_secctx_check(struct net *net, struct net_device *dev, bool task_valid)
 {
 	return 0;
 }
@@ -635,6 +682,48 @@ out:
 	return err;
 }
 EXPORT_SYMBOL(xfrm_state_flush);
+
+int xfrm_dev_state_flush(struct net *net, struct net_device *dev, bool task_valid)
+{
+	int i, err = 0, cnt = 0;
+
+	spin_lock_bh(&net->xfrm.xfrm_state_lock);
+	err = xfrm_dev_state_flush_secctx_check(net, dev, task_valid);
+	if (err)
+		goto out;
+
+	err = -ESRCH;
+	for (i = 0; i <= net->xfrm.state_hmask; i++) {
+		struct xfrm_state *x;
+		struct xfrm_state_offload *xso;
+restart:
+		hlist_for_each_entry(x, net->xfrm.state_bydst+i, bydst) {
+			xso = &x->xso;
+
+			if (!xfrm_state_kern(x) && xso->dev == dev) {
+				xfrm_state_hold(x);
+				spin_unlock_bh(&net->xfrm.xfrm_state_lock);
+
+				err = xfrm_state_delete(x);
+				xfrm_audit_state_delete(x, err ? 0 : 1,
+							task_valid);
+				xfrm_state_put(x);
+				if (!err)
+					cnt++;
+
+				spin_lock_bh(&net->xfrm.xfrm_state_lock);
+				goto restart;
+			}
+		}
+	}
+	if (cnt)
+		err = 0;
+
+out:
+	spin_unlock_bh(&net->xfrm.xfrm_state_lock);
+	return err;
+}
+EXPORT_SYMBOL(xfrm_dev_state_flush);
 
 void xfrm_sad_getinfo(struct net *net, struct xfrmk_sadinfo *si)
 {

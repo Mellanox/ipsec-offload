@@ -372,6 +372,7 @@ struct xfrm_type {
 	int			(*init_state)(struct xfrm_state *x);
 	void			(*destructor)(struct xfrm_state *);
 	int			(*input)(struct xfrm_state *, struct sk_buff *skb);
+	void			(*encap)(struct xfrm_state *, struct sk_buff *pskb);
 	int			(*output)(struct xfrm_state *, struct sk_buff *pskb);
 	int			(*reject)(struct xfrm_state *, struct sk_buff *,
 					  const struct flowi *);
@@ -979,7 +980,18 @@ void xfrm_dst_ifdown(struct dst_entry *dst, struct net_device *dev);
 struct sec_path {
 	atomic_t		refcnt;
 	int			len;
-	struct xfrm_state	*xvec[XFRM_MAX_DEPTH];
+
+        /* Output sequence number for replay protection on offloading. */
+	struct {
+		__u32 low;
+		__u32 hi;
+	} seq;
+
+	struct xfrm_state		*xvec[XFRM_MAX_DEPTH];
+
+	__u8				proto;
+	__u8				flags;
+#define SKB_GSO_SEGMENT			1
 };
 
 static inline int secpath_exists(struct sk_buff *skb)

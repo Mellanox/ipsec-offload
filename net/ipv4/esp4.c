@@ -182,6 +182,22 @@ static void esp_output_done_esn(struct crypto_async_request *base, int err)
 	esp_output_done(base, err);
 }
 
+static void esp4_gso_encap(struct xfrm_state *x, struct sk_buff *skb)
+{
+	struct ip_esp_hdr *esph;
+	struct iphdr *iph = ip_hdr(skb);
+	int proto = iph->protocol;
+
+	skb_push(skb, -skb_network_offset(skb));
+	esph = ip_esp_hdr(skb);
+	*skb_mac_header(skb) = IPPROTO_ESP;
+
+	esph->spi = x->id.spi;
+	esph->seq_no = htonl(XFRM_SKB_CB(skb)->seq.output.low);
+
+	skb->sp->proto = proto;
+}
+
 static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 {
 	struct esp_output_extra *extra;
@@ -207,7 +223,7 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	int extralen;
 	int tailen;
 	__be64 seqno;
-	__u8 proto = *skb_mac_header(skb);
+	__u8 proto;
 
 	/* skb is pure payload to encrypt */
 
@@ -231,12 +247,18 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	assoclen = sizeof(*esph);
 	extralen = 0;
 
+	if (skb->sp && (skb->sp->flags & SKB_GSO_SEGMENT)) {
+		proto = skb->sp->proto;
+	} else {
+		proto = *skb_mac_header(skb);
+		*skb_mac_header(skb) = IPPROTO_ESP;
+	}
+
 	if (x->props.flags & XFRM_STATE_ESN) {
 		extralen += sizeof(*extra);
 		assoclen += sizeof(__be32);
 	}
 
-	*skb_mac_header(skb) = IPPROTO_ESP;
 	esph = ip_esp_hdr(skb);
 
 	/* this is non-NULL only with UDP Encapsulation */
@@ -992,7 +1014,8 @@ static const struct xfrm_type esp_type =
 	.destructor	= esp_destroy,
 	.get_mtu	= esp4_get_mtu,
 	.input		= esp_input,
-	.output		= esp_output
+	.output		= esp_output,
+	.encap		= esp4_gso_encap,
 };
 
 static struct xfrm4_protocol esp4_protocol = {

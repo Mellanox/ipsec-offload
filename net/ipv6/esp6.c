@@ -198,6 +198,22 @@ static void esp_output_done_esn(struct crypto_async_request *base, int err)
 	esp_output_done(base, err);
 }
 
+static void esp6_gso_encap(struct xfrm_state *x, struct sk_buff *skb)
+{
+	struct ip_esp_hdr *esph;
+	struct ipv6hdr *iph = ipv6_hdr(skb);
+	int proto = iph->nexthdr;
+
+	skb_push(skb, -skb_network_offset(skb));
+	esph = ip_esp_hdr(skb);
+	*skb_mac_header(skb) = IPPROTO_ESP;
+
+	esph->spi = x->id.spi;
+	esph->seq_no = htonl(XFRM_SKB_CB(skb)->seq.output.low);
+
+	skb->sp->proto = proto;
+}
+
 static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 {
 	int err;
@@ -223,7 +239,7 @@ static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 	u8 *vaddr;
 	__be32 *seqhi;
 	__be64 seqno;
-	__u8 proto = *skb_mac_header(skb);
+	__u8 proto;
 
 	/* skb is pure payload to encrypt */
 	aead = x->data;
@@ -247,12 +263,18 @@ static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 	assoclen = sizeof(*esph);
 	seqhilen = 0;
 
+	if (skb->sp && (skb->sp->flags & SKB_GSO_SEGMENT)) {
+		proto = skb->sp->proto;
+	} else {
+		proto = *skb_mac_header(skb);
+		*skb_mac_header(skb) = IPPROTO_ESP;
+	}
+
 	if (x->props.flags & XFRM_STATE_ESN) {
 		seqhilen += sizeof(__be32);
 		assoclen += seqhilen;
 	}
 
-	*skb_mac_header(skb) = IPPROTO_ESP;
 	esph = ip_esp_hdr(skb);
 
 	if (!skb_cloned(skb)) {
@@ -921,6 +943,7 @@ static const struct xfrm_type esp6_type = {
 	.get_mtu	= esp6_get_mtu,
 	.input		= esp6_input,
 	.output		= esp6_output,
+	.encap		= esp6_gso_encap,
 	.hdr_offset	= xfrm6_find_1stfragopt,
 };
 

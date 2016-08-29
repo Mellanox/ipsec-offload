@@ -4531,6 +4531,11 @@ static enum gro_result dev_gro_receive(struct napi_struct *napi, struct sk_buff 
 	}
 	rcu_read_unlock();
 
+	if (PTR_ERR(pp) == -EINPROGRESS) {
+		ret = GRO_CONSUMED;
+		goto ok;
+	}
+
 	if (&ptype->list == head)
 		goto normal;
 
@@ -4637,6 +4642,7 @@ static gro_result_t napi_skb_finish(gro_result_t ret, struct sk_buff *skb)
 
 	case GRO_HELD:
 	case GRO_MERGED:
+	case GRO_CONSUMED:
 		break;
 	}
 
@@ -4707,6 +4713,7 @@ static gro_result_t napi_frags_finish(struct napi_struct *napi,
 		break;
 
 	case GRO_MERGED:
+	case GRO_CONSUMED:
 		break;
 	}
 
@@ -4849,7 +4856,12 @@ static int process_backlog(struct napi_struct *napi, int quota)
 
 		while ((skb = __skb_dequeue(&sd->process_queue))) {
 			rcu_read_lock();
-			__netif_receive_skb(skb);
+
+			if (skb_xfrm_gro(skb))
+				napi_gro_receive(napi, skb);
+			else
+				__netif_receive_skb(skb);
+
 			rcu_read_unlock();
 			input_queue_head_incr(sd);
 			if (++work >= quota)

@@ -219,6 +219,7 @@ int xfrm_output(struct sock *sk, struct sk_buff *skb)
 		if (skb->sp)
 			secpath_put(skb->sp);
 		skb->sp = sp;
+		skb->encapsulation = 1;
 
 		sp->olen++;
 		sp->xvec[skb->sp->len++] = x;
@@ -232,6 +233,8 @@ int xfrm_output(struct sock *sk, struct sk_buff *skb)
 
 		if (x->xso.dev && x->xso.dev->features & NETIF_F_HW_ESP_TX_CSUM)
 			goto out;
+	} else {
+		skb->encapsulation = 0;
 	}
 
 	if (skb_is_gso(skb))

@@ -638,6 +638,11 @@ static int esp_input(struct xfrm_state *x, struct sk_buff *skb)
 			nfrags = 1;
 
 			goto skip_cow;
+		} else if (skb->xfrm_gro) {
+			nfrags = skb_shinfo(skb)->nr_frags;
+			nfrags++;
+
+			goto skip_cow;
 		} else if (!skb_has_frag_list(skb)) {
 			int allocsize;
 			struct page_frag *pfrag = &x->xfrag;

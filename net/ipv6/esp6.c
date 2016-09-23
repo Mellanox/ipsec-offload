@@ -213,7 +213,7 @@ static void esp_output_fill_trailer(u8 *tail, int tfclen, int plen, __u8 proto)
 	tail[plen - 1] = proto;
 }
 
-static int esp6_output_head(struct xfrm_state *x, struct sk_buff *skb, __u8 proto, int tfclen, int tailen, int plen, bool *inplace)
+int esp6_output_head(struct xfrm_state *x, struct sk_buff *skb, __u8 proto, int tfclen, int tailen, int plen, bool *inplace)
 {
 	struct ip_esp_hdr *esph;
 	struct sk_buff *trailer;
@@ -222,7 +222,6 @@ static int esp6_output_head(struct xfrm_state *x, struct sk_buff *skb, __u8 prot
 	u8 *vaddr;
 	int nfrags;
 
-	*skb_mac_header(skb) = IPPROTO_ESP;
 	esph = ip_esp_hdr(skb);
 
 	if (!skb_cloned(skb)) {

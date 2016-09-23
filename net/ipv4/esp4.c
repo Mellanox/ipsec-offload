@@ -207,7 +207,6 @@ int esp_output_head(struct xfrm_state *x, struct sk_buff *skb, __u8 proto, int t
 	u8 *vaddr;
 	int nfrags;
 
-	*skb_mac_header(skb) = IPPROTO_ESP;
 	esph = ip_esp_hdr(skb);
 
 	/* this is non-NULL only with UDP Encapsulation */

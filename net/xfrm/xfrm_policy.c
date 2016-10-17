@@ -1700,6 +1700,7 @@ static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 	int tos;
 	int family = policy->selector.family;
 	xfrm_address_t saddr, daddr;
+	bool sync = true;
 
 	xfrm_flowi_addr_get(fl, &saddr, &daddr, family);
 
@@ -1751,6 +1752,9 @@ static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 		} else
 			dst_hold(dst);
 
+		if (!(xfrm[i]->xflags & XFRM_CRYPTO_SYNC))
+			sync = false;
+
 		dst1->xfrm = xfrm[i];
 		xdst->xfrm_genid = xfrm[i]->genid;
 
@@ -1787,6 +1791,9 @@ static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 		err = xfrm_fill_dst(xdst, dev, fl);
 		if (err)
 			goto free_dst;
+
+		if (sync)
+			dst_prev->flags |= DST_XFRM_SYNC;
 
 		dst_prev->header_len = header_len;
 		dst_prev->trailer_len = trailer_len;

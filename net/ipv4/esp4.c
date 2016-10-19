@@ -499,7 +499,9 @@ int esp_input_done2(struct sk_buff *skb, int err)
 	int elen = skb->len - hlen;
 	int ihl;
 	u8 nexthdr[2];
-	int padlen;
+	u8 *trailer_buf = NULL;
+	int padlen, trimlen;
+	__wsum csumdiff;
 
 	if (!xo || (xo && !(xo->flags & CRYPTO_DONE)))
 		kfree(ESP_SKB_CB(skb)->tmp);
@@ -557,7 +559,25 @@ int esp_input_done2(struct sk_buff *skb, int err)
 			skb->ip_summed = CHECKSUM_UNNECESSARY;
 	}
 
-	pskb_trim(skb, skb->len - alen - padlen - 2);
+	trimlen = alen + padlen + 2;
+	if (skb->ip_summed == CHECKSUM_COMPLETE) {
+		trailer_buf = kmalloc(trimlen, GFP_KERNEL);
+		if (!trailer_buf) {
+			err = -ENOMEM;
+			goto out;
+		}
+
+		/* trailer might not be in the linear part */
+		err = skb_copy_bits(skb, skb->len - trimlen,
+				    trailer_buf, trimlen);
+		WARN_ON(err);
+
+		csumdiff = csum_partial(trailer_buf, trimlen, 0);
+		skb->csum = csum_block_sub(skb->csum, csumdiff, 0);
+		skb_postpull_rcsum(skb, skb->data, hlen);
+	}
+
+	pskb_trim(skb, skb->len - trimlen);
 	__skb_pull(skb, hlen);
 	if (x->props.mode == XFRM_MODE_TUNNEL)
 		skb_reset_transport_header(skb);
@@ -570,6 +590,7 @@ int esp_input_done2(struct sk_buff *skb, int err)
 	if (err == IPPROTO_NONE)
 		err = -EINVAL;
 
+	kfree(trailer_buf);
 out:
 	return err;
 }

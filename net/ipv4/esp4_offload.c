@@ -139,7 +139,8 @@ static struct sk_buff *esp4_gso_segment(struct sk_buff *skb,
 		xo->seq.low = seq;
 		xo->seq.hi = xfrm_replay_seqhi(x, seq);
 
-		if(!(features & NETIF_F_HW_ESP))
+		if (!(features & NETIF_F_HW_ESP) ||
+		    (x->xso.offload_handle && x->xso.dev != skb->dev))
 			xo->flags |= CRYPTO_FALLBACK;
 
 		x->outer_mode->xmit(x, skb2);

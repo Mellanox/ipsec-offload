@@ -405,9 +405,6 @@ int esp_output_tail(struct xfrm_state *x, struct sk_buff *skb, __be64 seqno, int
 	aead_request_set_crypt(req, sg, dsg, ivlen + clen, iv);
 	aead_request_set_ad(req, assoclen);
 
-	seqno = cpu_to_be64(XFRM_SKB_CB(skb)->seq.output.low +
-			    ((u64)XFRM_SKB_CB(skb)->seq.output.hi << 32));
-
 	memset(iv, 0, ivlen);
 	memcpy(iv + ivlen - min(ivlen, 8), (u8 *)&seqno + 8 - min(ivlen, 8),
 	       min(ivlen, 8));
@@ -495,6 +492,7 @@ int esp_input_done2(struct sk_buff *skb, int err)
 {
 	const struct iphdr *iph;
 	struct xfrm_state *x = xfrm_input_state(skb);
+	struct xfrm_offload *xo = xfrm_offload(skb);
 	struct crypto_aead *aead = x->data;
 	int alen = crypto_aead_authsize(aead);
 	int hlen = sizeof(struct ip_esp_hdr) + crypto_aead_ivsize(aead);
@@ -503,7 +501,8 @@ int esp_input_done2(struct sk_buff *skb, int err)
 	u8 nexthdr[2];
 	int padlen;
 
-	kfree(ESP_SKB_CB(skb)->tmp);
+	if (!xo || (xo && !(xo->flags & CRYPTO_DONE)))
+		kfree(ESP_SKB_CB(skb)->tmp);
 
 	if (unlikely(err))
 		goto out;

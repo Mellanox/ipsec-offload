@@ -469,6 +469,7 @@ static int esp6_output(struct xfrm_state *x, struct sk_buff *skb)
 int esp6_input_done2(struct sk_buff *skb, int err)
 {
 	struct xfrm_state *x = xfrm_input_state(skb);
+	struct xfrm_offload *xo = xfrm_offload(skb);
 	struct crypto_aead *aead = x->data;
 	int alen = crypto_aead_authsize(aead);
 	int hlen = sizeof(struct ip_esp_hdr) + crypto_aead_ivsize(aead);
@@ -477,7 +478,8 @@ int esp6_input_done2(struct sk_buff *skb, int err)
 	int padlen;
 	u8 nexthdr[2];
 
-	kfree(ESP_SKB_CB(skb)->tmp);
+	if (!xo || (xo && !(xo->flags & CRYPTO_DONE)))
+		kfree(ESP_SKB_CB(skb)->tmp);
 
 	if (unlikely(err))
 		goto out;

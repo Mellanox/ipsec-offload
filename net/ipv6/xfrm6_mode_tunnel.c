@@ -118,7 +118,7 @@ static void xfrm6_mode_tunnel_xmit(struct xfrm_state *x, struct sk_buff *skb)
 	}
 
 	skb_reset_mac_len(skb);
-	skb_pull(skb, skb->mac_len + x->props.header_len);
+	pskb_pull(skb, skb->mac_len + x->props.header_len);
 }
 
 static struct xfrm_mode xfrm6_tunnel_mode = {

@@ -82,7 +82,7 @@ static void xfrm6_transport_xmit(struct xfrm_state *x, struct sk_buff *skb)
 	struct xfrm_offload *xo = xfrm_offload(skb);
 
 	skb_reset_mac_len(skb);
-	skb_pull(skb, skb->mac_len + sizeof(struct ipv6hdr) + x->props.header_len);
+	pskb_pull(skb, skb->mac_len + sizeof(struct ipv6hdr) + x->props.header_len);
 
 	if (xo->flags & XFRM_GSO_SEGMENT) {
 		 skb_reset_transport_header(skb);

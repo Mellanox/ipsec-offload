@@ -33,6 +33,8 @@ int validate_xmit_xfrm(struct sk_buff *skb, netdev_features_t features)
 
 	if (xo) {
 		x = skb->sp->xvec[skb->sp->len - 1];
+		if (x->xso.flags & XFRM_OFFLOAD_INBOUND)
+			return 0;
 
 		x->outer_mode->xmit(x, skb);
 

@@ -28,6 +28,9 @@ int validate_xmit_xfrm(struct sk_buff *skb, netdev_features_t features)
 	struct xfrm_state *x;
 	struct xfrm_offload *xo = xfrm_offload(skb);
 
+	if (skb_is_gso(skb))
+		return 0;
+
 	if (xo) {
 		x = skb->sp->xvec[skb->sp->len - 1];
 
@@ -56,7 +59,10 @@ int xfrm_dev_state_add(struct net *net, struct xfrm_state *x,
 	xfrm_address_t *saddr;
 	xfrm_address_t *daddr;
 
-	/* We don't yet support UPD encapsulation, tfc padding and ESN. */
+	if (!x->type_offload)
+		return 0;
+
+	/* We don't yet support UPD encapsulation, TFC padding and ESN. */
 	if (x->encap || x->tfcpad || (x->props.flags & XFRM_STATE_ESN))
 		return 0;
 

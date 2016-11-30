@@ -124,10 +124,8 @@ static struct sk_buff *esp4_gso_segment(struct sk_buff *skb,
 		esp_features = features & ~(NETIF_F_SG | NETIF_F_CSUM_MASK);
 
 	segs = x->outer_mode->gso_segment(x, skb, esp_features);
-	if (IS_ERR(segs))
+	if (IS_ERR_OR_NULL(segs))
 		goto out;
-	if (segs == NULL)
-		return ERR_PTR(-EINVAL);
 	__skb_pull(skb, skb->data - skb_mac_header(skb));
 
 	skb2 = segs;

@@ -301,7 +301,9 @@ static const struct xfrm_type_offload *xfrm_get_type_offload(u8 proto, unsigned 
 	struct xfrm_state_afinfo *afinfo;
 	const struct xfrm_type_offload **typemap;
 	const struct xfrm_type_offload *type;
+	int modload_attempted = 0;
 
+retry:
 	afinfo = xfrm_state_get_afinfo(family);
 	if (unlikely(afinfo == NULL))
 		return NULL;
@@ -310,6 +312,12 @@ static const struct xfrm_type_offload *xfrm_get_type_offload(u8 proto, unsigned 
 	type = typemap[proto];
 	if ((type && !try_module_get(type->owner)))
 		type = NULL;
+
+	if (!type && !modload_attempted) {
+		request_module("xfrm-offload-%d-%d", family, proto);
+		modload_attempted = 1;
+		goto retry;
+	}
 
 	rcu_read_unlock();
 	return type;

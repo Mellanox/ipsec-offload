@@ -499,8 +499,7 @@ int esp_input_done2(struct sk_buff *skb, int err)
 	int elen = skb->len - hlen;
 	int ihl;
 	u8 nexthdr[2];
-	u8 *trailer_buf = NULL;
-	int padlen, trimlen, tofs = 0;
+	int padlen, trimlen;
 	__wsum csumdiff;
 
 	if (!xo || (xo && !(xo->flags & CRYPTO_DONE)))
@@ -561,20 +560,7 @@ int esp_input_done2(struct sk_buff *skb, int err)
 
 	trimlen = alen + padlen + 2;
 	if (skb->ip_summed == CHECKSUM_COMPLETE) {
-		/* Trailer might not be word-aligned for csum */
-		tofs = (skb->len - trimlen) & 1;
-		trailer_buf = kmalloc(trimlen + tofs, GFP_KERNEL);
-		if (!trailer_buf) {
-			err = -ENOMEM;
-			goto out;
-		}
-		trailer_buf[0] = 0;
-
-		/* trailer might not be in the linear part */
-		err = skb_copy_bits(skb, skb->len - trimlen,
-				    trailer_buf + tofs, trimlen);
-		WARN_ON(err);
-		csumdiff = csum_partial(trailer_buf, trimlen + tofs, 0);
+		csumdiff = skb_checksum(skb, skb->len - trimlen, trimlen, 0);
 		skb->csum = csum_block_sub(skb->csum, csumdiff, 0);
 		skb_postpull_rcsum(skb, skb->data, hlen);
 	}
@@ -592,7 +578,6 @@ int esp_input_done2(struct sk_buff *skb, int err)
 	if (err == IPPROTO_NONE)
 		err = -EINVAL;
 
-	kfree(trailer_buf);
 out:
 	return err;
 }

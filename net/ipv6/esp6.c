@@ -501,7 +501,8 @@ int esp6_input_done2(struct sk_buff *skb, int err)
 	trimlen = alen + padlen + 2;
 	if (skb->ip_summed == CHECKSUM_COMPLETE) {
 		csumdiff = skb_checksum(skb, skb->len - trimlen, trimlen, 0);
-		skb->csum = csum_block_sub(skb->csum, csumdiff, 0);
+		skb->csum = csum_block_sub(skb->csum, csumdiff,
+					   skb->len - trimlen);
 		skb_postpull_rcsum(skb, skb->data, hlen);
 	}
 

@@ -34,38 +34,41 @@ static struct sk_buff **esp6_gro_receive(struct sk_buff **head,
 					 struct sk_buff *skb)
 {
 	int offset = skb_gro_offset(skb);
-	struct xfrm_offload *xo;
 	struct xfrm_state *x;
 	__be32 seq;
 	__be32 spi;
 	int err;
+	struct xfrm_offload *xo = xfrm_offload(skb);
 
 	skb_pull(skb, offset);
 
 	if ((err = xfrm_parse_spi(skb, IPPROTO_ESP, &spi, &seq)) != 0)
 		goto out;
 
-	err = secpath_set(skb);
-	if (err)
-		goto out;
+	if (!xo || !(xo->flags & CRYPTO_DONE)) {
+		err = secpath_set(skb);
+		if (err)
+			goto out;
 
-	if (skb->sp->len == XFRM_MAX_DEPTH)
-		goto out;
+		if (skb->sp->len == XFRM_MAX_DEPTH)
+			goto out;
 
-	x = xfrm_state_lookup(dev_net(skb->dev), skb->mark,
-			      (xfrm_address_t *)&ipv6_hdr(skb)->daddr,
-			      spi, IPPROTO_ESP, AF_INET6);
-	if (!x)
-		goto out;
+		x = xfrm_state_lookup(dev_net(skb->dev), skb->mark,
+				      (xfrm_address_t *)&ipv6_hdr(skb)->daddr,
+				      spi, IPPROTO_ESP, AF_INET6);
+		if (!x)
+			goto out;
 
-	skb->sp->xvec[skb->sp->len++] = x;
-	skb->sp->olen++;
+		skb->sp->xvec[skb->sp->len++] = x;
+		skb->sp->olen++;
 
-	xo = xfrm_offload(skb);
-	if (!xo) {
-		xfrm_state_put(x);
-		goto out;
+		xo = xfrm_offload(skb);
+		if (!xo) {
+			xfrm_state_put(x);
+			goto out;
+		}
 	}
+
 	xo->flags |= XFRM_GRO;
 
 	XFRM_TUNNEL_SKB_CB(skb)->tunnel.ip6 = NULL;

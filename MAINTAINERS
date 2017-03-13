@@ -8153,6 +8153,16 @@ W:	http://www.mellanox.com
 Q:	http://patchwork.ozlabs.org/project/netdev/list/
 F:	drivers/net/ethernet/mellanox/mlx5/core/en_*
 
+MELLANOX ETHERNET INNOVA DRIVER
+M:	Ilan Tayari <ilant@mellanox.com>
+M:	Boris Pismenny <borisp@mellanox.com>
+L:	netdev@vger.kernel.org
+S:	Supported
+W:	http://www.mellanox.com
+Q:	http://patchwork.ozlabs.org/project/netdev/list/
+F:	drivers/net/ethernet/mellanox/mlx5/core/fpga*
+F:	include/linux/mlx5/fpga*
+
 MELLANOX ETHERNET SWITCH DRIVERS
 M:	Jiri Pirko <jiri@mellanox.com>
 M:	Ido Schimmel <idosch@mellanox.com>

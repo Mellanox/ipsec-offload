@@ -288,6 +288,9 @@ enum mlx5_event {
 
 	MLX5_EVENT_TYPE_PAGE_FAULT	   = 0xc,
 	MLX5_EVENT_TYPE_NIC_VPORT_CHANGE   = 0xd,
+
+	MLX5_EVENT_TYPE_FPGA_ERROR         = 0x20,
+	MLX5_EVENT_TYPE_FPGA_QP_ERROR      = 0x21,
 };
 
 enum {
@@ -941,6 +944,7 @@ enum mlx5_cap_type {
 	MLX5_CAP_RESERVED,
 	MLX5_CAP_VECTOR_CALC,
 	MLX5_CAP_QOS,
+	MLX5_CAP_FPGA,
 	/* NUM OF CAP Types */
 	MLX5_CAP_NUM
 };
@@ -1040,6 +1044,12 @@ enum mlx5_cap_type {
 #define MLX5_CAP_QOS(mdev, cap)\
 	MLX5_GET(qos_cap, mdev->hca_caps_cur[MLX5_CAP_QOS], cap)
 
+#define MLX5_CAP_FPGA(mdev, cap) \
+	MLX5_GET(fpga_cap, mdev->hca_caps_cur[MLX5_CAP_FPGA], cap)
+
+#define MLX5_CAP64_FPGA(mdev, cap) \
+	MLX5_GET64(fpga_cap, mdev->hca_caps_cur[MLX5_CAP_FPGA], cap)
+
 enum {
 	MLX5_CMD_STAT_OK			= 0x0,
 	MLX5_CMD_STAT_INT_ERR			= 0x1,
@@ -1089,5 +1099,8 @@ static inline u16 mlx5_to_sw_pkey_sz(int pkey_sz)
 #define MLX5_BY_PASS_NUM_PRIOS (MLX5_BY_PASS_NUM_REGULAR_PRIOS +\
 				MLX5_BY_PASS_NUM_DONT_TRAP_PRIOS +\
 				MLX5_BY_PASS_NUM_MULTICAST_PRIOS)
+
+#define MLX_IPSEC_PET_ETHERTYPE (0x8CE4)
+#define MLX_IPSEC_PET_LEN       8
 
 #endif /* MLX5_DEVICE_H */

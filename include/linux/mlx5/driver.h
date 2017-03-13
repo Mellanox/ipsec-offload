@@ -47,6 +47,7 @@
 #include <linux/mlx5/device.h>
 #include <linux/mlx5/doorbell.h>
 #include <linux/mlx5/srq.h>
+#include <uapi/linux/mlx5/fpga.h>
 
 enum {
 	MLX5_BOARD_ID_LEN = 64,
@@ -104,6 +105,10 @@ enum {
 enum {
 	MLX5_REG_QETCR		 = 0x4005,
 	MLX5_REG_QTCT		 = 0x400a,
+	MLX5_REG_FPGA_CAP	 = 0x4022,
+	MLX5_REG_FPGA_CTRL	 = 0x4023,
+	MLX5_REG_FPGA_ACCESS_REG = 0x4024,
+	MLX5_REG_FPGA_SHELL_CNTR = 0x4025,
 	MLX5_REG_PCAP		 = 0x5001,
 	MLX5_REG_PMTU		 = 0x5003,
 	MLX5_REG_PTYS		 = 0x5004,
@@ -164,6 +169,9 @@ enum mlx5_dev_event {
 	MLX5_DEV_EVENT_PKEY_CHANGE,
 	MLX5_DEV_EVENT_GUID_CHANGE,
 	MLX5_DEV_EVENT_CLIENT_REREG,
+	MLX5_DEV_EVENT_FPGA_ERROR,
+	MLX5_DEV_EVENT_FPGA_QP_ERROR,
+	MLX5_DEV_EVENT_ACCEL_CHANGE,
 };
 
 enum mlx5_port_status {
@@ -642,6 +650,7 @@ struct mlx5_core_dev {
 	atomic_t		num_qps;
 	u32			issi;
 	struct mlx5e_resources  mlx5e_res;
+	struct mlx5_accel_ops  *accel_ops;
 #ifdef CONFIG_RFS_ACCEL
 	struct cpu_rmap         *rmap;
 #endif
@@ -731,6 +740,61 @@ struct mlx5_hca_vport_context {
 	u16			qkey_violation_counter;
 	u16			pkey_violation_counter;
 	bool			grh_required;
+};
+
+enum mlx5_fpga_qp_state {
+	MLX5_FPGA_QP_STATE_INIT = 0,
+	MLX5_FPGA_QP_STATE_ACTIVE = 1,
+	MLX5_FPGA_QP_STATE_ERROR = 2,
+};
+
+enum mlx5_fpga_qp_type {
+	MLX5_FPGA_QP_TYPE_SHELL = 0,
+	MLX5_FPGA_QP_TYPE_SANDBOX = 1,
+};
+
+enum mlx5_fpga_qp_service_type {
+	MLX5_FPGA_QP_SERVICE_TYPE_RC = 0,
+};
+
+enum mlx5_fpga_qpc_field_select {
+	MLX5_FPGA_QPC_STATE = BIT(0),
+};
+
+struct mlx5_fpga_qpc {
+	enum mlx5_fpga_qp_state		state;
+	enum mlx5_fpga_qp_type		qp_type;
+	enum mlx5_fpga_qp_service_type	st;
+	u8				tclass;
+	u16				ether_type;
+	u8				pcp;
+	u8				dei;
+	u16				vlan_id;
+	u32				next_rcv_psn;
+	u32				next_send_psn;
+	u16				pkey;
+	u32				remote_qpn;
+	u8				rnr_retry;
+	u8				retry_count;
+	u8				remote_mac[ETH_ALEN];
+	struct in6_addr			remote_ip;
+	u8				fpga_mac[ETH_ALEN];
+	struct in6_addr			fpga_ip;
+};
+
+struct mlx5_fpga_qp_counters {
+	u64 rx_ack_packets;
+	u64 rx_send_packets;
+	u64 tx_ack_packets;
+	u64 tx_send_packets;
+	u64 rx_total_drop;
+};
+
+struct mlx5_fpga_shell_counters {
+	u64 ddr_read_requests;
+	u64 ddr_write_requests;
+	u64 ddr_read_bytes;
+	u64 ddr_write_bytes;
 };
 
 static inline void *mlx5_buf_offset(struct mlx5_buf *buf, int offset)
@@ -915,6 +979,19 @@ int mlx5_rl_add_rate(struct mlx5_core_dev *dev, u32 rate, u16 *index);
 void mlx5_rl_remove_rate(struct mlx5_core_dev *dev, u32 rate);
 bool mlx5_rl_is_in_range(struct mlx5_core_dev *dev, u32 rate);
 
+int mlx5_fpga_caps(struct mlx5_core_dev *dev, u32 *caps);
+int mlx5_fpga_access_reg(struct mlx5_core_dev *dev, u8 size, u64 addr,
+			 u8 *buf, bool write);
+int mlx5_fpga_sbu_caps(struct mlx5_core_dev *dev, void *caps, int size);
+int mlx5_fpga_load(struct mlx5_core_dev *dev, enum mlx_accel_fpga_image image);
+int mlx5_fpga_ctrl_op(struct mlx5_core_dev *dev, u8 op);
+int mlx5_fpga_image_select(struct mlx5_core_dev *dev,
+			   enum mlx_accel_fpga_image image);
+int mlx5_fpga_query(struct mlx5_core_dev *dev,
+		    enum mlx_accel_fpga_status *status,
+		    enum mlx_accel_fpga_image *admin_image,
+		    enum mlx_accel_fpga_image *oper_image);
+
 static inline int fw_initializing(struct mlx5_core_dev *dev)
 {
 	return ioread32be(&dev->iseg->initializing) >> 31;
@@ -1007,5 +1084,34 @@ static inline bool mlx5_rl_is_supported(struct mlx5_core_dev *dev)
 enum {
 	MLX5_TRIGGERED_CMD_COMP = (u64)1 << 32,
 };
+
+struct mlx5_swp_info {
+	u8 outer_l4_ofs;
+	u8 outer_l3_ofs;
+	u8 inner_l4_ofs;
+	u8 inner_l3_ofs;
+	u8 swp_flags;
+	bool use_swp;
+};
+
+struct mlx5_accel_ops {
+	struct sk_buff  *(*rx_handler)(struct sk_buff *skb, u8 *pet, u8 petlen);
+	struct sk_buff  *(*tx_handler)(struct sk_buff *skb,
+				       struct mlx5_swp_info *swp);
+	netdev_features_t (*feature_chk)(struct sk_buff *skb,
+					 struct net_device *netdev,
+					 netdev_features_t features,
+					 bool *done);
+	int (*get_count)(struct net_device *netdev);
+	int (*get_strings)(struct net_device *netdev, uint8_t *data);
+	int (*get_stats)(struct net_device *netdev, u64 *data);
+	u16 mtu_extra;
+	netdev_features_t features;
+};
+
+int mlx5_accel_register(struct mlx5_core_dev *dev,
+			struct mlx5_accel_ops *client_ops);
+void mlx5_accel_unregister(struct mlx5_core_dev *dev);
+struct mlx5_accel_ops *mlx5_accel_get(struct mlx5_core_dev *dev);
 
 #endif /* MLX5_DRIVER_H */

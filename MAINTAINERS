@@ -7859,6 +7859,16 @@ S:	Supported
 F:	drivers/input/touchscreen/melfas_mip4.c
 F:	Documentation/devicetree/bindings/input/touchscreen/melfas_mip4.txt
 
+MELLANOX ETHERNET ACCELERATOR DRIVERS
+M:	Ilan Tayari <ilant@mellanox.com>
+M:	Aviad Yehezkel <aviadye@mellanox.com>
+L:	netdev@vger.kernel.org
+S:	Supported
+W:	http://www.mellanox.com
+Q:	http://patchwork.ozlabs.org/project/netdev/list/
+F:	drivers/net/ethernet/mellanox/accelerator/
+F:	include/uapi/linux/mlx5/
+
 MELLANOX ETHERNET DRIVER (mlx4_en)
 M:	Tariq Toukan <tariqt@mellanox.com>
 L:	netdev@vger.kernel.org

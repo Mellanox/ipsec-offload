@@ -175,10 +175,12 @@ struct mlx5e_umr_wqe {
 
 static const char mlx5e_priv_flags[][ETH_GSTRING_LEN] = {
 	"rx_cqe_moder",
+	"striding_rq_allow",
 };
 
 enum mlx5e_priv_flag {
 	MLX5E_PFLAG_RX_CQE_BASED_MODER = (1 << 0),
+	MLX5E_PFLAG_STRIDING_RQ_ALLOWED = (1 << 1),
 };
 
 #define MLX5E_SET_PRIV_FLAG(priv, pflag, enable)    \
@@ -374,6 +376,8 @@ struct mlx5e_mpw_info {
 	struct mlx5e_umr_dma_info umr;
 	u16 consumed_strides;
 	u16 skbs_frags[MLX5_MPWRQ_PAGES_PER_WQE];
+	u8 pet[8];
+	u8 petlen;
 };
 
 struct mlx5e_tx_wqe_info {
@@ -776,6 +780,8 @@ int mlx5e_get_max_linkspeed(struct mlx5_core_dev *mdev, u32 *speed);
 
 void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params,
 				 u8 cq_period_mode);
+void mlx5e_set_rq_type_params(struct mlx5e_priv *priv, u8 rq_type);
+u8 mlx5e_rq_type(struct mlx5e_priv *priv, bool allow_strq);
 
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 				      struct mlx5_wqe_ctrl_seg *ctrl, int bf_sz)

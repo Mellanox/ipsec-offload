@@ -105,6 +105,7 @@ cycle_t mlx5_read_internal_timer(struct mlx5_core_dev *dev);
 u32 mlx5_get_msix_vec(struct mlx5_core_dev *dev, int vecidx);
 struct mlx5_eq *mlx5_eqn2eq(struct mlx5_core_dev *dev, int eqn);
 void mlx5_cq_tasklet_cb(unsigned long data);
+int mlx5_fpga_get_caps(struct mlx5_core_dev *dev);
 
 void mlx5_lag_add(struct mlx5_core_dev *dev, struct net_device *netdev);
 void mlx5_lag_remove(struct mlx5_core_dev *dev);
@@ -128,6 +129,8 @@ int mlx5_encap_alloc(struct mlx5_core_dev *dev,
 		     void *encap_header,
 		     u32 *encap_id);
 void mlx5_encap_dealloc(struct mlx5_core_dev *dev, u32 encap_id);
+void mlx5_accel_init(struct mlx5_core_dev *dev);
+void mlx5_accel_destroy(struct mlx5_core_dev *dev);
 
 bool mlx5_lag_intf_add(struct mlx5_interface *intf, struct mlx5_priv *priv);
 

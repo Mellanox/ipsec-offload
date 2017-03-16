@@ -51,8 +51,10 @@
 
 #define MLX5_SET_CFG(p, f, v) MLX5_SET(create_flow_group_in, p, f, v)
 
-#define MLX5E_HW2SW_MTU(hwmtu) ((hwmtu) - (ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN))
-#define MLX5E_SW2HW_MTU(swmtu) ((swmtu) + (ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN))
+#define MLX5E_HW2SW_MTU(hwmtu, priv) ((hwmtu) - (ETH_HLEN + VLAN_HLEN + \
+				      ETH_FCS_LEN) - (priv)->mtu_extra)
+#define MLX5E_SW2HW_MTU(swmtu, priv) ((swmtu) + (ETH_HLEN + VLAN_HLEN + \
+				      ETH_FCS_LEN) + (priv)->mtu_extra)
 
 #define MLX5E_MAX_NUM_TC	8
 
@@ -180,11 +182,13 @@ extern const char mlx5e_self_tests[][ETH_GSTRING_LEN];
 static const char mlx5e_priv_flags[][ETH_GSTRING_LEN] = {
 	"rx_cqe_moder",
 	"rx_cqe_compress",
+	"striding_rq_allow",
 };
 
 enum mlx5e_priv_flag {
 	MLX5E_PFLAG_RX_CQE_BASED_MODER = (1 << 0),
 	MLX5E_PFLAG_RX_CQE_COMPRESS = (1 << 1),
+	MLX5E_PFLAG_STRIDING_RQ_ALLOWED = (1 << 2),
 };
 
 #define MLX5E_SET_PFLAG(priv, pflag, enable)			\
@@ -304,6 +308,11 @@ typedef void (*mlx5e_fp_handle_rx_cqe)(struct mlx5e_rq *rq,
 typedef int (*mlx5e_fp_alloc_wqe)(struct mlx5e_rq *rq, struct mlx5e_rx_wqe *wqe,
 				  u16 ix);
 
+struct mlx5e_sq;
+typedef netdev_tx_t (*mlx5e_fp_sq_xmit)(struct mlx5e_sq *sq,
+					struct sk_buff *skb,
+					struct mlx5_swp_info *swp_info);
+
 typedef void (*mlx5e_fp_dealloc_wqe)(struct mlx5e_rq *rq, u16 ix);
 
 struct mlx5e_dma_info {
@@ -346,6 +355,8 @@ struct mlx5e_page_cache {
 	u32 tail;
 	struct mlx5e_dma_info page_cache[MLX5E_CACHE_SIZE];
 };
+
+#define RQ_PAGE_SIZE(rq) ((1 << (rq)->buff.page_order) << PAGE_SHIFT)
 
 struct mlx5e_rq {
 	/* data path */
@@ -494,6 +505,7 @@ struct mlx5e_sq {
 	int                        tc;
 	u32                        rate_limit;
 	u8                         type;
+	mlx5e_fp_sq_xmit           sq_xmit;
 } ____cacheline_aligned_in_smp;
 
 static inline bool mlx5e_sq_has_room_for(struct mlx5e_sq *sq, u16 n)
@@ -730,6 +742,10 @@ struct mlx5e_priv {
 
 	const struct mlx5e_profile *profile;
 	void                      *ppriv;
+	u16                        mtu_extra;
+#ifdef CONFIG_MLX5_IPSEC
+	struct mlx5_ipsec_dev     *ipsec;
+#endif
 };
 
 void mlx5e_build_ptys2ethtool_map(void);
@@ -817,6 +833,7 @@ int mlx5e_get_max_linkspeed(struct mlx5_core_dev *mdev, u32 *speed);
 void mlx5e_set_rx_cq_mode_params(struct mlx5e_params *params,
 				 u8 cq_period_mode);
 void mlx5e_set_rq_type_params(struct mlx5e_priv *priv, u8 rq_type);
+u8 mlx5e_rq_type(struct mlx5e_priv *priv, bool allow_strq);
 
 static inline void mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
 				      struct mlx5_wqe_ctrl_seg *ctrl, int bf_sz)
@@ -935,4 +952,8 @@ bool mlx5e_has_offload_stats(const struct net_device *dev, int attr_id);
 
 bool mlx5e_is_uplink_rep(struct mlx5e_priv *priv);
 bool mlx5e_is_vf_vport_rep(struct mlx5e_priv *priv);
+netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb,
+			  struct mlx5_swp_info *swp_info);
+void mlx5e_complete_rx_cqe(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe,
+			   u32 cqe_bcnt, struct sk_buff *skb);
 #endif /* __MLX5_EN_H__ */

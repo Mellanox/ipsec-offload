@@ -36,10 +36,13 @@
 #include <linux/mlx5/fs.h>
 #include <net/vxlan.h>
 #include <linux/bpf.h>
+
 #include "en.h"
 #include "en_tc.h"
+#include "en_ipsec/ipsec.h"
 #include "eswitch.h"
 #include "vxlan.h"
+#include "fpga/fpga.h"
 
 struct mlx5e_rq_param {
 	u32			rqc[MLX5_ST_SZ_DW(rqc)];
@@ -115,13 +118,23 @@ void mlx5e_set_rq_type_params(struct mlx5e_priv *priv, u8 rq_type)
 		       MLX5E_GET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS));
 }
 
-static void mlx5e_set_rq_priv_params(struct mlx5e_priv *priv)
+static bool mlx5e_allow_strq(struct mlx5e_priv *priv)
+{
+	return !!(priv->params.pflags & MLX5E_PFLAG_STRIDING_RQ_ALLOWED);
+}
+
+u8 mlx5e_rq_type(struct mlx5e_priv *priv, bool allow_strq)
 {
 	u8 rq_type = mlx5e_check_fragmented_striding_rq_cap(priv->mdev) &&
-		    !priv->xdp_prog ?
+		    !priv->xdp_prog && allow_strq ?
 		    MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ :
 		    MLX5_WQ_TYPE_LINKED_LIST;
-	mlx5e_set_rq_type_params(priv, rq_type);
+	return rq_type;
+}
+
+static void mlx5e_set_rq_priv_params(struct mlx5e_priv *priv, bool allow_strq)
+{
+	mlx5e_set_rq_type_params(priv, mlx5e_rq_type(priv, allow_strq));
 }
 
 static void mlx5e_update_carrier(struct mlx5e_priv *priv)
@@ -622,17 +635,19 @@ static int mlx5e_create_rq(struct mlx5e_channel *c,
 			goto err_rq_wq_destroy;
 		}
 
-		if (mlx5e_is_vf_vport_rep(priv))
+		if (mlx5e_is_vf_vport_rep(priv)) {
 			rq->handle_rx_cqe = mlx5e_handle_rx_cqe_rep;
-		else
+		} else {
 			rq->handle_rx_cqe = mlx5e_handle_rx_cqe;
+			mlx5_ipsec_create_rq(c, rq);
+		}
 
 		rq->alloc_wqe = mlx5e_alloc_rx_wqe;
 		rq->dealloc_wqe = mlx5e_dealloc_rx_wqe;
 
 		rq->buff.wqe_sz = (priv->params.lro_en) ?
 				priv->params.lro_wqe_sz :
-				MLX5E_SW2HW_MTU(priv->netdev->mtu);
+				MLX5E_SW2HW_MTU(priv->netdev->mtu, priv);
 		byte_count = rq->buff.wqe_sz;
 
 		/* calc the required page order */
@@ -1016,6 +1031,8 @@ static int mlx5e_create_sq(struct mlx5e_channel *c,
 	sq->mkey_be   = c->mkey_be;
 	sq->channel   = c;
 	sq->tc        = tc;
+	sq->sq_xmit   = mlx5e_sq_xmit;
+	mlx5_ipsec_create_sq(c, sq);
 
 	err = mlx5_alloc_bfreg(mdev, &sq->bfreg, MLX5_CAP_GEN(mdev, bf), false);
 	if (err)
@@ -1105,6 +1122,8 @@ static int mlx5e_enable_sq(struct mlx5e_sq *sq, struct mlx5e_sq_param *param)
 
 	MLX5_SET(sqc,  sqc, state,		MLX5_SQC_STATE_RST);
 	MLX5_SET(sqc,  sqc, tis_lst_sz, param->type == MLX5E_SQ_ICO ? 0 : 1);
+	if ((param->type == MLX5E_SQ_TXQ) && MLX5_CAP_GEN(mdev, fpga))
+		MLX5_SET(sqc, sqc, allow_swp, true);
 
 	MLX5_SET(wq,   wq, wq_type,       MLX5_WQ_TYPE_CYCLIC);
 	MLX5_SET(wq,   wq, uar_page,      sq->bfreg.index);
@@ -2233,7 +2252,7 @@ free_in:
 static int mlx5e_set_mtu(struct mlx5e_priv *priv, u16 mtu)
 {
 	struct mlx5_core_dev *mdev = priv->mdev;
-	u16 hw_mtu = MLX5E_SW2HW_MTU(mtu);
+	u16 hw_mtu = MLX5E_SW2HW_MTU(mtu, priv);
 	int err;
 
 	err = mlx5_set_port_mtu(mdev, hw_mtu, 1);
@@ -2255,7 +2274,7 @@ static void mlx5e_query_mtu(struct mlx5e_priv *priv, u16 *mtu)
 	if (err || !hw_mtu) /* fallback to port oper mtu */
 		mlx5_query_port_oper_mtu(mdev, &hw_mtu, 1);
 
-	*mtu = MLX5E_HW2SW_MTU(hw_mtu);
+	*mtu = MLX5E_HW2SW_MTU(hw_mtu, priv);
 }
 
 static int mlx5e_set_dev_port_mtu(struct net_device *netdev)
@@ -3172,6 +3191,9 @@ static netdev_features_t mlx5e_features_check(struct sk_buff *skb,
 	features = vlan_features_check(skb, features);
 	features = vxlan_features_check(skb, features);
 
+	if (mlx5_ipsec_feature_check(skb, netdev, features))
+		return features;
+
 	/* Validate if the tunneled packet is being offloaded by HW */
 	if (skb->encapsulation &&
 	    (features & NETIF_F_CSUM_MASK || features & NETIF_F_GSO_MASK))
@@ -3244,7 +3266,7 @@ static int mlx5e_xdp_set(struct net_device *netdev, struct bpf_prog *prog)
 		bpf_prog_put(old_prog);
 
 	if (reset) /* change RQ type according to priv->xdp_prog */
-		mlx5e_set_rq_priv_params(priv);
+		mlx5e_set_rq_priv_params(priv, mlx5e_allow_strq(priv));
 
 	if (was_opened && reset)
 		mlx5e_open_locked(netdev);
@@ -3530,8 +3552,10 @@ static void mlx5e_build_nic_netdev_priv(struct mlx5_core_dev *mdev,
 
 	MLX5E_SET_PFLAG(priv, MLX5E_PFLAG_RX_CQE_COMPRESS,
 			priv->params.rx_cqe_compress_def);
+	MLX5E_SET_PFLAG(priv, MLX5E_PFLAG_STRIDING_RQ_ALLOWED,
+			false);
+	mlx5e_set_rq_priv_params(priv, mlx5e_allow_strq(priv));
 
-	mlx5e_set_rq_priv_params(priv);
 	if (priv->params.rq_wq_type == MLX5_WQ_TYPE_LINKED_LIST_STRIDING_RQ)
 		priv->params.lro_en = true;
 
@@ -3672,6 +3696,8 @@ static void mlx5e_build_nic_netdev(struct net_device *netdev)
 	if (MLX5_CAP_GEN(mdev, vport_group_manager))
 		netdev->switchdev_ops = &mlx5e_switchdev_ops;
 #endif
+
+	mlx5_ipsec_build_netdev(mdev, netdev);
 }
 
 static void mlx5e_create_q_counter(struct mlx5e_priv *priv)
@@ -3925,7 +3951,7 @@ int mlx5e_attach_netdev(struct mlx5_core_dev *mdev, struct net_device *netdev)
 	/* MTU range: 68 - hw-specific max */
 	netdev->min_mtu = ETH_MIN_MTU;
 	mlx5_query_port_max_mtu(priv->mdev, &max_mtu, 1);
-	netdev->max_mtu = MLX5E_HW2SW_MTU(max_mtu);
+	netdev->max_mtu = MLX5E_HW2SW_MTU(max_mtu, priv);
 
 	mlx5e_set_dev_port_mtu(netdev);
 
@@ -4026,6 +4052,10 @@ static int mlx5e_attach(struct mlx5_core_dev *mdev, void *vpriv)
 	if (err)
 		return err;
 
+	err = mlx5_ipsec_init_one(mdev, netdev);
+	if (err)
+		return err;
+
 	err = mlx5e_attach_netdev(mdev, netdev);
 	if (err) {
 		mlx5e_destroy_mdev_resources(mdev);
@@ -4046,6 +4076,7 @@ static void mlx5e_detach(struct mlx5_core_dev *mdev, void *vpriv)
 
 	mlx5e_unregister_vport_rep(mdev);
 	mlx5e_detach_netdev(mdev, netdev);
+	mlx5_ipsec_deinit_one(mdev, netdev);
 	mlx5e_destroy_mdev_resources(mdev);
 }
 
@@ -4109,6 +4140,7 @@ void mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, struct mlx5e_priv *priv)
 	destroy_workqueue(priv->wq);
 	if (profile->cleanup)
 		profile->cleanup(priv);
+
 	free_netdev(netdev);
 }
 
@@ -4140,6 +4172,7 @@ static struct mlx5_interface mlx5e_interface = {
 
 void mlx5e_init(void)
 {
+	mlx5_ipsec_init();
 	mlx5e_build_ptys2ethtool_map();
 	mlx5_register_interface(&mlx5e_interface);
 }

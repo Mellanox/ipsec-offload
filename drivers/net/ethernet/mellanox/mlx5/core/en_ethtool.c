@@ -31,6 +31,7 @@
  */
 
 #include "en.h"
+#include "en_ipsec/ipsec.h"
 
 static void mlx5e_get_drvinfo(struct net_device *dev,
 			      struct ethtool_drvinfo *drvinfo)
@@ -176,8 +177,8 @@ static int mlx5e_get_sset_count(struct net_device *dev, int sset)
 		       MLX5E_NUM_SQ_STATS(priv) +
 		       MLX5E_NUM_PFC_COUNTERS(priv) +
 		       ARRAY_SIZE(mlx5e_pme_status_desc) +
-		       ARRAY_SIZE(mlx5e_pme_error_desc);
-
+		       ARRAY_SIZE(mlx5e_pme_error_desc) +
+		       mlx5_ipsec_get_count(dev);
 	case ETH_SS_PRIV_FLAGS:
 		return ARRAY_SIZE(mlx5e_priv_flags);
 	case ETH_SS_TEST:
@@ -257,6 +258,10 @@ static void mlx5e_fill_stats_strings(struct mlx5e_priv *priv, uint8_t *data)
 
 	for (i = 0; i < ARRAY_SIZE(mlx5e_pme_error_desc); i++)
 		strcpy(data + (idx++) * ETH_GSTRING_LEN, mlx5e_pme_error_desc[i].format);
+
+	/* IPSec counters */
+	idx += mlx5_ipsec_get_strings(priv->netdev,
+				      data + idx * ETH_GSTRING_LEN);
 
 	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
 		return;
@@ -377,6 +382,9 @@ static void mlx5e_get_ethtool_stats(struct net_device *dev,
 	for (i = 0; i < ARRAY_SIZE(mlx5e_pme_error_desc); i++)
 		data[idx++] = MLX5E_READ_CTR64_CPU(mlx5_priv->pme_stats.error_counters,
 						   mlx5e_pme_error_desc, i);
+
+	/* IPSec counters */
+	idx += mlx5_ipsec_get_stats(dev, data + idx);
 
 	if (!test_bit(MLX5E_STATE_OPENED, &priv->state))
 		return;
@@ -1492,6 +1500,24 @@ static int set_pflag_rx_cqe_compress(struct net_device *netdev,
 	return 0;
 }
 
+static int set_pflag_striding_rq_allowed(struct net_device *netdev, bool enable)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	int err = 0;
+	u8 rq_type = mlx5e_rq_type(priv, enable);
+
+	if (test_bit(MLX5E_STATE_OPENED, &priv->state) &&
+	    (rq_type != priv->params.rq_wq_type)) {
+		netdev_dbg(netdev, "Changing RQ type to %u\n", rq_type);
+		mlx5e_close_locked(netdev);
+		priv->params.rq_wq_type = rq_type;
+		mlx5e_set_rq_type_params(priv, priv->params.rq_wq_type);
+		err = mlx5e_open_locked(netdev);
+	}
+
+	return err;
+}
+
 static int mlx5e_handle_pflag(struct net_device *netdev,
 			      u32 wanted_flags,
 			      enum mlx5e_priv_flag flag,
@@ -1531,6 +1557,12 @@ static int mlx5e_set_priv_flags(struct net_device *netdev, u32 pflags)
 	err = mlx5e_handle_pflag(netdev, pflags,
 				 MLX5E_PFLAG_RX_CQE_COMPRESS,
 				 set_pflag_rx_cqe_compress);
+	if (err)
+		goto out;
+
+	err = mlx5e_handle_pflag(netdev, pflags,
+				 MLX5E_PFLAG_STRIDING_RQ_ALLOWED,
+				 set_pflag_striding_rq_allowed);
 
 out:
 	mutex_unlock(&priv->state_lock);

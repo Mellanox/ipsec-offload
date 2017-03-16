@@ -218,7 +218,8 @@ static inline void mlx5e_insert_vlan(void *start, struct sk_buff *skb, u16 ihs,
 	mlx5e_tx_skb_pull_inline(skb_data, skb_len, cpy2_sz);
 }
 
-static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
+netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb,
+			  struct mlx5_swp_info *swp_info)
 {
 	struct mlx5_wq_cyc       *wq   = &sq->wq;
 
@@ -286,6 +287,14 @@ static netdev_tx_t mlx5e_sq_xmit(struct mlx5e_sq *sq, struct sk_buff *skb)
 	}
 
 	sq->stats.bytes += num_bytes;
+	if (swp_info->use_swp) {
+		eseg->swp_outer_l3_offset = swp_info->outer_l3_ofs;
+		eseg->swp_outer_l4_offset = swp_info->outer_l4_ofs;
+		eseg->swp_inner_l3_offset = swp_info->inner_l3_ofs;
+		eseg->swp_inner_l4_offset = swp_info->inner_l4_ofs;
+		eseg->swp_flags = swp_info->swp_flags;
+	}
+
 	wi->num_bytes = num_bytes;
 
 	ds_cnt = sizeof(*wqe) / MLX5_SEND_WQE_DS;
@@ -399,8 +408,9 @@ netdev_tx_t mlx5e_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct mlx5e_priv *priv = netdev_priv(dev);
 	struct mlx5e_sq *sq = priv->txq_to_sq_map[skb_get_queue_mapping(skb)];
+	struct mlx5_swp_info swp_info = {0};
 
-	return mlx5e_sq_xmit(sq, skb);
+	return sq->sq_xmit(sq, skb, &swp_info);
 }
 
 bool mlx5e_poll_tx_cq(struct mlx5e_cq *cq, int napi_budget)

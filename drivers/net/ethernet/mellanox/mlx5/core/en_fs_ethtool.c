@@ -66,6 +66,7 @@ static struct mlx5e_ethtool_table *get_flow_table(struct mlx5e_priv *priv,
 	switch (fs->flow_type & ~(FLOW_EXT | FLOW_MAC_EXT)) {
 	case TCP_V4_FLOW:
 	case UDP_V4_FLOW:
+	case ESP_V4_FLOW:
 		max_tuples = ETHTOOL_NUM_L3_L4_FTS;
 		prio = MLX5E_ETHTOOL_L3_L4_PRIO + (max_tuples - num_tuples);
 		eth_ft = &priv->fs.ethtool.l3_l4_ft[prio];
@@ -148,12 +149,15 @@ static int set_flow_attrs(u32 *match_c, u32 *match_v,
 	void *outer_headers_v = MLX5_ADDR_OF(fte_match_param, match_v,
 					     outer_headers);
 	u32 flow_type = fs->flow_type & ~(FLOW_EXT | FLOW_MAC_EXT);
+	struct ethtool_ah_espip4_spec *ipsec4_mask;
+	struct ethtool_ah_espip4_spec *ipsec4_val;
 	struct ethtool_tcpip4_spec *l4_mask;
 	struct ethtool_tcpip4_spec *l4_val;
 	struct ethtool_usrip4_spec *l3_mask;
 	struct ethtool_usrip4_spec *l3_val;
 	struct ethhdr *eth_val;
 	struct ethhdr *eth_mask;
+	void *ptr;
 
 	switch (flow_type) {
 	case TCP_V4_FLOW:
@@ -201,6 +205,28 @@ static int set_flow_attrs(u32 *match_c, u32 *match_v,
 			 0xffff);
 		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, ip_protocol,
 			 IPPROTO_UDP);
+		break;
+	case ESP_V4_FLOW:
+		ipsec4_mask = &fs->m_u.esp_ip4_spec;
+		ipsec4_val = &fs->h_u.esp_ip4_spec;
+		set_ips(outer_headers_v, outer_headers_c, ipsec4_mask->ip4src,
+			ipsec4_val->ip4src, ipsec4_mask->ip4dst,
+			ipsec4_val->ip4dst);
+
+		if (ipsec4_mask->spi) {
+			MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c,
+				 udp_sport, 0xffff);
+			MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c,
+				 udp_dport, 0xffff);
+
+			ptr = MLX5_ADDR_OF(fte_match_set_lyr_2_4,
+					   outer_headers_v, udp_sport);
+			memcpy(ptr, &ipsec4_val->spi, sizeof(ipsec4_val->spi));
+		}
+		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_c, ip_protocol,
+			 0xffff);
+		MLX5_SET(fte_match_set_lyr_2_4, outer_headers_v, ip_protocol,
+			 IPPROTO_ESP);
 		break;
 	case IP_USER_FLOW:
 		l3_mask = &fs->m_u.usr_ip4_spec;
@@ -382,6 +408,7 @@ static struct mlx5e_ethtool_rule *get_ethtool_rule(struct mlx5e_priv *priv,
 static int validate_flow(struct mlx5e_priv *priv,
 			 struct ethtool_rx_flow_spec *fs)
 {
+	struct ethtool_ah_espip4_spec *ipsec4_mask;
 	struct ethtool_tcpip4_spec *l4_mask;
 	struct ethtool_usrip4_spec *l3_mask;
 	struct ethhdr *eth_mask;
@@ -430,6 +457,28 @@ static int validate_flow(struct mlx5e_priv *priv,
 			num_tuples++;
 		}
 		/* Flow is TCP/UDP */
+		num_tuples++;
+		break;
+	case ESP_V4_FLOW:
+		if (fs->m_u.esp_ip4_spec.tos)
+			return -EINVAL;
+		ipsec4_mask = &fs->m_u.esp_ip4_spec;
+		if (ipsec4_mask->ip4src) {
+			if (!all_ones(ipsec4_mask->ip4src))
+				return -EINVAL;
+			num_tuples++;
+		}
+		if (ipsec4_mask->ip4dst) {
+			if (!all_ones(ipsec4_mask->ip4dst))
+				return -EINVAL;
+			num_tuples++;
+		}
+		if (ipsec4_mask->spi) {
+			if (!all_ones(ipsec4_mask->spi))
+				return -EINVAL;
+			num_tuples++;
+		}
+		/* Flow is ESP */
 		num_tuples++;
 		break;
 	case IP_USER_FLOW:

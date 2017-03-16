@@ -1162,4 +1162,13 @@ enum {
 	MLX5_TRIGGERED_CMD_COMP = (u64)1 << 32,
 };
 
+struct mlx5_swp_info {
+	u8 outer_l4_ofs;
+	u8 outer_l3_ofs;
+	u8 inner_l4_ofs;
+	u8 inner_l3_ofs;
+	u8 swp_flags;
+	bool use_swp;
+};
+
 #endif /* MLX5_DRIVER_H */

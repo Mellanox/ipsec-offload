@@ -34,6 +34,7 @@
 #define __MLX5_WQ_H__
 
 #include <linux/mlx5/mlx5_ifc.h>
+#include <linux/mlx5/qp.h>
 
 struct mlx5_wq_param {
 	int		linear;
@@ -58,6 +59,16 @@ struct mlx5_wq_cyc {
 	__be32			*db;
 	u16			sz_m1;
 	u8			log_stride;
+};
+
+struct mlx5_wq_qp {
+	void			*buf;
+	__be32			*db;
+	void			*buf_rq;
+	u16			sz_m1_rq;
+	u8			log_stride_rq;
+	void			*buf_sq;
+	u16			sz_m1_sq;
 };
 
 struct mlx5_cqwq {
@@ -86,6 +97,12 @@ int mlx5_wq_cyc_create(struct mlx5_core_dev *mdev, struct mlx5_wq_param *param,
 		       void *wqc, struct mlx5_wq_cyc *wq,
 		       struct mlx5_wq_ctrl *wq_ctrl);
 u32 mlx5_wq_cyc_get_size(struct mlx5_wq_cyc *wq);
+
+int mlx5_wq_qp_create(struct mlx5_core_dev *mdev, struct mlx5_wq_param *param,
+		      int log_stride_rq, int log_rq_size, int log_sq_size,
+		      struct mlx5_wq_qp *wq, struct mlx5_wq_ctrl *wq_ctrl);
+u32 mlx5_wq_qp_get_size_rq(struct mlx5_wq_qp *wq);
+u32 mlx5_wq_qp_get_size_sq(struct mlx5_wq_qp *wq);
 
 int mlx5_cqwq_create(struct mlx5_core_dev *mdev, struct mlx5_wq_param *param,
 		     void *cqc, struct mlx5_cqwq *wq,
@@ -116,6 +133,16 @@ static inline int mlx5_wq_cyc_cc_bigger(u16 cc1, u16 cc2)
 	int smaller = 0x8000 & (cc1 - cc2);
 
 	return !equal && !smaller;
+}
+
+static inline void *mlx5_wq_qp_get_rwqe(struct mlx5_wq_qp *wq, u16 ix)
+{
+	return wq->buf_rq + (ix << wq->log_stride_rq);
+}
+
+static inline void *mlx5_wq_qp_get_swqe(struct mlx5_wq_qp *wq, u16 ix)
+{
+	return wq->buf_sq + (ix * MLX5_SEND_WQE_BB);
 }
 
 static inline u32 mlx5_cqwq_get_ci(struct mlx5_cqwq *wq)

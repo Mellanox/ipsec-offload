@@ -892,19 +892,31 @@ out:
 int mlx5_ib_query_port(struct ib_device *ibdev, u8 port,
 		       struct ib_port_attr *props)
 {
+	unsigned int count;
+	int ret;
+
 	switch (mlx5_get_vport_access_method(ibdev)) {
 	case MLX5_VPORT_ACCESS_METHOD_MAD:
-		return mlx5_query_mad_ifc_port(ibdev, port, props);
+		ret = mlx5_query_mad_ifc_port(ibdev, port, props);
+		break;
 
 	case MLX5_VPORT_ACCESS_METHOD_HCA:
-		return mlx5_query_hca_port(ibdev, port, props);
+		ret = mlx5_query_hca_port(ibdev, port, props);
+		break;
 
 	case MLX5_VPORT_ACCESS_METHOD_NIC:
-		return mlx5_query_port_roce(ibdev, port, props);
+		ret = mlx5_query_port_roce(ibdev, port, props);
+		break;
 
 	default:
-		return -EINVAL;
+		ret = -EINVAL;
 	}
+
+	if (!ret && props) {
+		count = mlx5_core_reserved_gids_count(to_mdev(ibdev)->mdev);
+		props->gid_tbl_len -= count;
+	}
+	return ret;
 }
 
 static int mlx5_ib_query_gid(struct ib_device *ibdev, u8 port, int index,

@@ -68,6 +68,7 @@ struct mlx5_fpga_device {
 int mlx5_fpga_device_init(struct mlx5_core_dev *mdev);
 void mlx5_fpga_device_deinit(struct mlx5_core_dev *mdev);
 int mlx5_fpga_device_start(struct mlx5_core_dev *mdev);
+void mlx5_fpga_device_stop(struct mlx5_core_dev *mdev);
 void mlx5_fpga_event(struct mlx5_core_dev *mdev, u8 event, void *data);
 
 #else
@@ -84,6 +85,10 @@ static inline void mlx5_fpga_device_deinit(struct mlx5_core_dev *mdev)
 static inline int mlx5_fpga_device_start(struct mlx5_core_dev *mdev)
 {
 	return 0;
+}
+
+static inline void mlx5_fpga_device_stop(struct mlx5_core_dev *mdev)
+{
 }
 
 static inline void mlx5_fpga_event(struct mlx5_core_dev *mdev, u8 event,

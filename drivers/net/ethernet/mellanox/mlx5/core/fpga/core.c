@@ -145,6 +145,7 @@ again:
 int mlx5_fpga_device_start(struct mlx5_core_dev *mdev)
 {
 	struct mlx5_fpga_device *fdev = mdev->fpga;
+	unsigned int max_num_qps;
 	int err;
 
 	if (!fdev)
@@ -157,8 +158,12 @@ int mlx5_fpga_device_start(struct mlx5_core_dev *mdev)
 		return err;
 	}
 
+	mutex_lock(&fdev->mutex);
+	max_num_qps = MLX5_CAP_FPGA(mdev, shell_caps.max_num_qps);
+	mlx5_core_reserve_gids(mdev, max_num_qps);
 	fdev->state = MLX5_FPGA_STATUS_SUCCESS;
-	return 0;
+	mutex_unlock(&fdev->mutex);
+	return err;
 }
 
 int mlx5_fpga_device_init(struct mlx5_core_dev *mdev)
@@ -185,12 +190,32 @@ int mlx5_fpga_device_init(struct mlx5_core_dev *mdev)
 	return err;
 }
 
+void mlx5_fpga_device_stop(struct mlx5_core_dev *mdev)
+{
+	struct mlx5_fpga_device *fdev = mdev->fpga;
+
+	if (!fdev)
+		return;
+
+	mutex_lock(&fdev->mutex);
+	if (fdev->state != MLX5_FPGA_STATUS_SUCCESS)
+		goto out_unlock;
+
+	mlx5_core_reserve_gids(mdev, 0);
+	fdev->state = MLX5_FPGA_STATUS_NONE;
+
+out_unlock:
+	mutex_unlock(&fdev->mutex);
+}
+
 void mlx5_fpga_device_deinit(struct mlx5_core_dev *mdev)
 {
 	struct mlx5_fpga_device *fdev = mdev->fpga;
 
 	if (!fdev)
 		return;
+
+	mlx5_fpga_device_stop(mdev);
 
 	fdev->mdev = NULL;
 	mdev->fpga = NULL;
@@ -221,6 +246,7 @@ static void mlx5_fpga_handle_error(struct work_struct *work)
 	case MLX5_FPGA_STATUS_SUCCESS:
 		mlx5_fpga_err(fdev, "Error %u: %s\n",
 			      syndrome, mlx5_fpga_syndrome_to_string(syndrome));
+		mlx5_fpga_device_stop(fdev->mdev);
 		fdev->state = MLX5_FPGA_STATUS_FAILURE;
 		disable = true;
 		break;

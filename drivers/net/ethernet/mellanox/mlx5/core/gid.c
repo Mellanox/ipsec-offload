@@ -32,7 +32,69 @@
 
 #include <linux/mlx5/driver.h>
 #include <linux/etherdevice.h>
+#include <linux/idr.h>
 #include "mlx5_core.h"
+
+void mlx5_core_reserved_gids_init(struct mlx5_core_dev *dev)
+{
+	ida_init(&dev->reserved_gids.ida);
+	dev->reserved_gids.start = 0;
+	dev->reserved_gids.count = 0;
+}
+
+void mlx5_core_reserved_gids_deinit(struct mlx5_core_dev *dev)
+{
+	WARN_ON(!ida_is_empty(&dev->reserved_gids.ida));
+	dev->reserved_gids.start = 0;
+	dev->reserved_gids.count = 0;
+	ida_destroy(&dev->reserved_gids.ida);
+}
+
+void mlx5_core_reserve_gids(struct mlx5_core_dev *dev, unsigned int count)
+{
+	unsigned int tblsz = MLX5_CAP_ROCE(dev, roce_address_table_size);
+	unsigned int start = 0;
+
+	WARN_ON(!ida_is_empty(&dev->reserved_gids.ida));
+	if (count > tblsz)
+		count = tblsz;
+	if (count > MLX5_MAX_RESERVED_GIDS)
+		count = MLX5_MAX_RESERVED_GIDS;
+
+	start = tblsz - count;
+	mlx5_core_dbg(dev, "Reserving %u GIDs starting at %u\n", count, start);
+	dev->reserved_gids.start = start;
+	dev->reserved_gids.count = count;
+}
+
+int mlx5_core_reserved_gid_add(struct mlx5_core_dev *dev, int *gid_index)
+{
+	int end = dev->reserved_gids.start + dev->reserved_gids.count;
+	int index = 0;
+
+	index = ida_simple_get(&dev->reserved_gids.ida,
+			       dev->reserved_gids.start, end, GFP_KERNEL);
+	if (index < 0)
+		return index;
+
+	mlx5_core_dbg(dev, "Adding reserved GID %u\n", index);
+	*gid_index = index;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mlx5_core_reserved_gid_add);
+
+void mlx5_core_reserved_gid_del(struct mlx5_core_dev *dev, int gid_index)
+{
+	mlx5_core_dbg(dev, "Removing reserved GID %u\n", gid_index);
+	ida_simple_remove(&dev->reserved_gids.ida, gid_index);
+}
+EXPORT_SYMBOL_GPL(mlx5_core_reserved_gid_del);
+
+unsigned int mlx5_core_reserved_gids_count(struct mlx5_core_dev *dev)
+{
+	return dev->reserved_gids.count;
+}
+EXPORT_SYMBOL_GPL(mlx5_core_reserved_gids_count);
 
 int mlx5_core_gid_set(struct mlx5_core_dev *dev, unsigned int index,
 		      u8 roce_version, u8 roce_l3_type, const u8 *gid,

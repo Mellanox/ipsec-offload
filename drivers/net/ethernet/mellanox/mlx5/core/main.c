@@ -1154,10 +1154,11 @@ static int mlx5_load_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 		goto err_sriov;
 	}
 
+	mlx5_core_reserved_gids_init(dev);
 	err = mlx5_fpga_device_start(dev);
 	if (err) {
 		dev_err(&pdev->dev, "fpga device start failed %d\n", err);
-		goto err_reg_dev;
+		goto err_fpga_start;
 	}
 
 	if (mlx5_device_registered(dev)) {
@@ -1178,6 +1179,10 @@ out:
 	return 0;
 
 err_reg_dev:
+	mlx5_fpga_device_stop(dev);
+
+err_fpga_start:
+	mlx5_core_reserved_gids_deinit(dev);
 	mlx5_sriov_detach(dev);
 
 err_sriov:
@@ -1253,6 +1258,9 @@ static int mlx5_unload_one(struct mlx5_core_dev *dev, struct mlx5_priv *priv,
 
 	if (mlx5_device_registered(dev))
 		mlx5_detach_device(dev);
+
+	mlx5_fpga_device_stop(dev);
+	mlx5_core_reserved_gids_deinit(dev);
 
 	mlx5_sriov_detach(dev);
 #ifdef CONFIG_MLX5_CORE_EN

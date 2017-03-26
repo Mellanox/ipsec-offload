@@ -774,6 +774,7 @@ struct mlx5_core_dev {
 	struct mlx5_fpga_device *fpga;
 #endif
 	struct mlx5_rsvd_gids	reserved_gids;
+	atomic_t                roce_en;
 #ifdef CONFIG_RFS_ACCEL
 	struct cpu_rmap         *rmap;
 #endif

@@ -159,6 +159,8 @@ static const char *eqe_type_str(u8 type)
 		return "MLX5_EVENT_TYPE_PPS_EVENT";
 	case MLX5_EVENT_TYPE_FPGA_ERROR:
 		return "MLX5_EVENT_TYPE_FPGA_ERROR";
+	case MLX5_EVENT_TYPE_FPGA_QP_ERROR:
+		return "MLX5_EVENT_TYPE_FPGA_QP_ERROR";
 	default:
 		return "Unrecognized event";
 	}
@@ -481,6 +483,7 @@ static irqreturn_t mlx5_eq_int(int irq, void *eq_ptr)
 			break;
 
 		case MLX5_EVENT_TYPE_FPGA_ERROR:
+		case MLX5_EVENT_TYPE_FPGA_QP_ERROR:
 			mlx5_fpga_event(dev, eqe->type, &eqe->data.raw);
 			break;
 
@@ -702,7 +705,8 @@ int mlx5_start_eqs(struct mlx5_core_dev *dev)
 		async_event_mask |= (1ull << MLX5_EVENT_TYPE_PPS_EVENT);
 
 	if (MLX5_CAP_GEN(dev, fpga))
-		async_event_mask |= (1ull << MLX5_EVENT_TYPE_FPGA_ERROR);
+		async_event_mask |= (1ull << MLX5_EVENT_TYPE_FPGA_ERROR) |
+				    (1ull << MLX5_EVENT_TYPE_FPGA_QP_ERROR);
 
 	err = mlx5_create_map_eq(dev, &table->cmd_eq, MLX5_EQ_VEC_CMD,
 				 MLX5_NUM_CMD_EQE, 1ull << MLX5_EVENT_TYPE_CMD,

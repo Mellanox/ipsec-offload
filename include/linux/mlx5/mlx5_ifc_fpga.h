@@ -366,4 +366,21 @@ struct mlx5_ifc_fpga_shell_qp_packet_bits {
 	u8         data[0][0x8];
 };
 
+enum {
+	MLX5_FPGA_QP_ERROR_EVENT_SYNDROME_RETRY_COUNTER_EXPIRED  = 0x1,
+	MLX5_FPGA_QP_ERROR_EVENT_SYNDROME_RNR_EXPIRED            = 0x2,
+};
+
+struct mlx5_ifc_fpga_qp_error_event_bits {
+	u8         reserved_0[0x40];
+
+	u8         reserved_1[0x18];
+	u8         syndrome[0x8];
+
+	u8         reserved_2[0x60];
+
+	u8         reserved_3[0x8];
+	u8         fpga_qpn[0x18];
+};
+
 #endif /* MLX5_IFC_FPGA_H */

@@ -52,10 +52,17 @@ static const char *const mlx5_fpga_error_strings[] = {
 	"Image Changed",
 };
 
+static const char * const mlx5_fpga_qp_error_strings[] = {
+	"Null Syndrome",
+	"Retry Counter Expired",
+	"RNR Expired",
+};
+
 struct mlx5_fpga_error_work {
 	struct work_struct work;
 	struct mlx5_fpga_device *fdev;
 	u8 syndrome;
+	u32 fpga_qpn;
 };
 
 static struct mlx5_fpga_device *mlx5_fpga_device_alloc(void)
@@ -277,6 +284,13 @@ static const char *mlx5_fpga_syndrome_to_string(u8 syndrome)
 	return "Unknown";
 }
 
+static const char *qp_error_string(u8 syndrome)
+{
+	if (syndrome < ARRAY_SIZE(mlx5_fpga_qp_error_strings))
+		return mlx5_fpga_qp_error_strings[syndrome];
+	return "Unknown";
+}
+
 static void mlx5_fpga_handle_error(struct work_struct *work)
 {
 	struct mlx5_fpga_error_work *err_work;
@@ -311,6 +325,26 @@ static void mlx5_fpga_handle_error(struct work_struct *work)
 		mlx5_disable_device(fdev->mdev);
 }
 
+static void mlx5_fpga_handle_qp_error(struct work_struct *work)
+{
+	struct mlx5_fpga_error_work *err_work;
+	struct mlx5_fpga_device *fdev;
+	u32 fpga_qpn;
+	u8 syndrome;
+
+	err_work = container_of(work, struct mlx5_fpga_error_work, work);
+	fdev = err_work->fdev;
+	fpga_qpn = err_work->fpga_qpn;
+	syndrome = err_work->syndrome;
+	kfree(err_work);
+
+	mlx5_fpga_warn(fdev, "Error %u on QP %u: %s\n",
+		       syndrome, fpga_qpn, qp_error_string(syndrome));
+	mlx5_fpga_device_stop(fdev->mdev);
+	fdev->state = MLX5_FPGA_STATUS_FAILURE;
+	mlx5_disable_device(fdev->mdev);
+}
+
 void mlx5_fpga_event(struct mlx5_core_dev *mdev, u8 event, void *data)
 {
 	struct mlx5_fpga_error_work *work;
@@ -326,6 +360,10 @@ void mlx5_fpga_event(struct mlx5_core_dev *mdev, u8 event, void *data)
 		INIT_WORK(&work->work, mlx5_fpga_handle_error);
 		work->syndrome = MLX5_GET(fpga_error_event, data, syndrome);
 		break;
+	case MLX5_EVENT_TYPE_FPGA_QP_ERROR:
+		INIT_WORK(&work->work, mlx5_fpga_handle_qp_error);
+		work->syndrome = MLX5_GET(fpga_qp_error_event, data, syndrome);
+		work->fpga_qpn = MLX5_GET(fpga_qp_error_event, data, fpga_qpn);
 		break;
 	default:
 		mlx5_fpga_warn(mdev->fpga, "Unexpected event %u\n", event);

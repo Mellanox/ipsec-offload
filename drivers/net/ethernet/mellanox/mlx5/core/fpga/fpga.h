@@ -53,7 +53,51 @@ struct mlx5_fpga_query {
 	enum mlx5_fpga_status status;
 };
 
+enum mlx5_fpga_qpc_field_select {
+	MLX5_FPGA_QPC_STATE = BIT(0),
+};
+
+struct mlx5_fpga_qpc {
+	enum mlx5_ifc_fpga_qp_state		state;
+	enum mlx5_ifc_fpga_qp_type		qp_type;
+	enum mlx5_ifc_fpga_qp_service_type	st;
+	u8					tclass;
+	u16					ether_type;
+	u8					pcp;
+	u8					dei;
+	u16					vlan_id;
+	u32					next_rcv_psn;
+	u32					next_send_psn;
+	u16					pkey;
+	u32					remote_qpn;
+	u8					rnr_retry;
+	u8					retry_count;
+	u8					remote_mac[ETH_ALEN];
+	struct in6_addr				remote_ip;
+	u8					fpga_mac[ETH_ALEN];
+	struct in6_addr				fpga_ip;
+};
+
+struct mlx5_fpga_qp_counters {
+	u64 rx_ack_packets;
+	u64 rx_send_packets;
+	u64 tx_ack_packets;
+	u64 tx_send_packets;
+	u64 rx_total_drop;
+};
+
 int mlx5_fpga_caps(struct mlx5_core_dev *dev, u32 *caps);
 int mlx5_fpga_query(struct mlx5_core_dev *dev, struct mlx5_fpga_query *query);
+
+int mlx5_fpga_create_qp(struct mlx5_core_dev *dev,
+			struct mlx5_fpga_qpc *fpga_qpc, u32 *fpga_qpn);
+int mlx5_fpga_modify_qp(struct mlx5_core_dev *dev, u32 fpga_qpn,
+			enum mlx5_fpga_qpc_field_select fields,
+			struct mlx5_fpga_qpc *fpga_qpc);
+int mlx5_fpga_query_qp(struct mlx5_core_dev *dev, u32 fpga_qpn,
+		       struct mlx5_fpga_qpc *fpga_qpc);
+int mlx5_fpga_query_qp_counters(struct mlx5_core_dev *dev, u32 fpga_qpn,
+				bool clear, struct mlx5_fpga_qp_counters *data);
+int mlx5_fpga_destroy_qp(struct mlx5_core_dev *dev, u32 fpga_qpn);
 
 #endif /* __MLX5_FPGA_H__ */

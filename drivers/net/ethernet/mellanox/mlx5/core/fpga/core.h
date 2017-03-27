@@ -40,11 +40,21 @@
 /* Represents an Innova device */
 struct mlx5_fpga_device {
 	struct mlx5_core_dev *mdev;
+	int port;
 	struct completion load_event;
 	struct mutex mutex; /* Protects state transitions */
 	enum mlx5_fpga_status state;
 	enum mlx5_fpga_image last_admin_image;
 	enum mlx5_fpga_image last_oper_image;
+
+	/* Parameters for QPs */
+	u16 pkey_index;
+	u32 pdn;
+	struct mlx5_core_mkey mkey;
+	struct mlx5_uars_page *uar;
+	u16 bf_ofs;
+	u16 bf_sz;
+	spinlock_t bf_lock; /* Protect access to the blue-flame buffer */
 };
 
 #define mlx5_fpga_dbg(__adev, format, ...) \

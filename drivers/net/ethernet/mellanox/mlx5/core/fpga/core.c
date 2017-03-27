@@ -37,6 +37,7 @@
 #include "mlx5_core.h"
 #include "fpga.h"
 #include "core.h"
+#include "qp.h"
 
 #define MLX5_FPGA_LOAD_TIMEOUT 20000 /* msec */
 
@@ -66,7 +67,9 @@ static struct mlx5_fpga_device *mlx5_fpga_device_alloc(void)
 
 	mutex_init(&fdev->mutex);
 	init_completion(&fdev->load_event);
+	fdev->port = 1;
 	fdev->state = MLX5_FPGA_STATUS_NONE;
+	spin_lock_init(&fdev->bf_lock);
 	return fdev;
 }
 
@@ -161,7 +164,9 @@ int mlx5_fpga_device_start(struct mlx5_core_dev *mdev)
 	mutex_lock(&fdev->mutex);
 	max_num_qps = MLX5_CAP_FPGA(mdev, shell_caps.max_num_qps);
 	mlx5_core_reserve_gids(mdev, max_num_qps);
-	fdev->state = MLX5_FPGA_STATUS_SUCCESS;
+
+	err = mlx5_fpga_qp_init(fdev);
+	fdev->state = err ? MLX5_FPGA_STATUS_FAILURE : MLX5_FPGA_STATUS_SUCCESS;
 	mutex_unlock(&fdev->mutex);
 	return err;
 }
@@ -186,6 +191,8 @@ int mlx5_fpga_device_init(struct mlx5_core_dev *mdev)
 	mdev->fpga = fdev;
 
 	mutex_lock(&fdev->mutex);
+	mlx5_fpga_qp_deinit(fdev);
+	fdev->state = MLX5_FPGA_STATUS_NONE;
 	mutex_unlock(&fdev->mutex);
 	return err;
 }
@@ -201,6 +208,7 @@ void mlx5_fpga_device_stop(struct mlx5_core_dev *mdev)
 	if (fdev->state != MLX5_FPGA_STATUS_SUCCESS)
 		goto out_unlock;
 
+	mlx5_fpga_qp_deinit(fdev);
 	mlx5_core_reserve_gids(mdev, 0);
 	fdev->state = MLX5_FPGA_STATUS_NONE;
 

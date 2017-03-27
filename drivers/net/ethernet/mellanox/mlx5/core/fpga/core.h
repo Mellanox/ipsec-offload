@@ -38,6 +38,14 @@
 #include "fpga.h"
 #include "sdk.h"
 
+/* Represents client-specific and Innova device-specific information */
+struct mlx5_fpga_client_data {
+	struct list_head  list;
+	struct mlx5_fpga_client *client;
+	void *data;
+	bool added;
+};
+
 /* Represents an Innova device */
 struct mlx5_fpga_device {
 	struct mlx5_core_dev *mdev;
@@ -48,7 +56,12 @@ struct mlx5_fpga_device {
 	enum mlx5_fpga_image last_admin_image;
 	enum mlx5_fpga_image last_oper_image;
 
+	struct list_head list;
+	struct list_head client_data_list;
 	struct mlx5_fpga_conn *shell_conn;
+	struct mlx5_fpga_conn *sbu_conn;
+	struct kobject *class_kobj;
+	struct kobject core_kobj;
 
 	/* Transactions state */
 	struct mlx5_fpga_trans_device_state *trans;

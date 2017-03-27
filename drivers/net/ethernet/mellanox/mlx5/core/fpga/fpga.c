@@ -38,6 +38,39 @@
 #include "mlx5_core.h"
 #include "fpga.h"
 
+#define MLX5_FPGA_ACCESS_REG_SZ (MLX5_ST_SZ_DW(fpga_access_reg) + \
+				 MLX5_FPGA_ACCESS_REG_SIZE_MAX)
+
+int mlx5_fpga_access_reg(struct mlx5_core_dev *dev, u8 size, u64 addr,
+			 u8 *buf, bool write)
+{
+	u32 in[MLX5_FPGA_ACCESS_REG_SZ] = {0};
+	u32 out[MLX5_FPGA_ACCESS_REG_SZ];
+	int err;
+
+	if (size & 3)
+		return -EINVAL;
+	if (addr & 3)
+		return -EINVAL;
+	if (size > MLX5_FPGA_ACCESS_REG_SIZE_MAX)
+		return -EINVAL;
+
+	MLX5_SET(fpga_access_reg, in, size, size);
+	MLX5_SET64(fpga_access_reg, in, address, addr);
+	if (write)
+		memcpy(MLX5_ADDR_OF(fpga_access_reg, in, data), buf, size);
+
+	err = mlx5_core_access_reg(dev, in, sizeof(in), out, sizeof(out),
+				   MLX5_REG_FPGA_ACCESS_REG, 0, write);
+	if (err)
+		return err;
+
+	if (!write)
+		memcpy(buf, MLX5_ADDR_OF(fpga_access_reg, out, data), size);
+
+	return 0;
+}
+
 int mlx5_fpga_caps(struct mlx5_core_dev *dev, u32 *caps)
 {
 	u32 in[MLX5_ST_SZ_DW(fpga_cap)] = {0};
@@ -45,6 +78,67 @@ int mlx5_fpga_caps(struct mlx5_core_dev *dev, u32 *caps)
 	return mlx5_core_access_reg(dev, in, sizeof(in), caps,
 				    MLX5_ST_SZ_BYTES(fpga_cap),
 				    MLX5_REG_FPGA_CAP, 0, 0);
+}
+
+int mlx5_fpga_sbu_caps(struct mlx5_core_dev *dev, void *caps, int size)
+{
+	u64 addr = MLX5_CAP64_FPGA(dev, sandbox_extended_caps_addr);
+	int cap_size = MLX5_CAP_FPGA(dev, sandbox_extended_caps_len);
+	int ret = 0;
+	int read;
+
+	if (cap_size > size) {
+		mlx5_core_warn(dev, "Not enough buffer %u for FPGA SBU caps %u",
+			       size, cap_size);
+		return -EINVAL;
+	}
+
+	while (cap_size > 0) {
+		read = cap_size;
+		if (read > MLX5_FPGA_ACCESS_REG_SIZE_MAX)
+			read = MLX5_FPGA_ACCESS_REG_SIZE_MAX;
+
+		ret = mlx5_fpga_access_reg(dev, cap_size, addr, caps, false);
+		if (ret) {
+			mlx5_core_warn(dev, "Error reading FPGA SBU caps");
+			return ret;
+		}
+
+		cap_size -= read;
+		addr += read;
+		caps += read;
+	}
+
+	return ret;
+}
+
+static int mlx5_fpga_ctrl_write(struct mlx5_core_dev *dev, u8 op,
+				enum mlx5_fpga_image image)
+{
+	u32 in[MLX5_ST_SZ_DW(fpga_ctrl)] = {0};
+	u32 out[MLX5_ST_SZ_DW(fpga_ctrl)];
+
+	MLX5_SET(fpga_ctrl, in, operation, op);
+	MLX5_SET(fpga_ctrl, in, flash_select_admin, image);
+
+	return mlx5_core_access_reg(dev, in, sizeof(in), out, sizeof(out),
+				    MLX5_REG_FPGA_CTRL, 0, true);
+}
+
+int mlx5_fpga_load(struct mlx5_core_dev *dev, enum mlx5_fpga_image image)
+{
+	return mlx5_fpga_ctrl_write(dev, MLX5_FPGA_CTRL_OP_LOAD, image);
+}
+
+int mlx5_fpga_ctrl_op(struct mlx5_core_dev *dev, u8 op)
+{
+	return mlx5_fpga_ctrl_write(dev, op, 0);
+}
+
+int mlx5_fpga_image_select(struct mlx5_core_dev *dev,
+			   enum mlx5_fpga_image image)
+{
+	return mlx5_fpga_ctrl_write(dev, MLX5_FPGA_CTRL_OP_IMAGE_SEL, image);
 }
 
 int mlx5_fpga_query(struct mlx5_core_dev *dev, struct mlx5_fpga_query *query)
@@ -227,3 +321,30 @@ out:
 	return ret;
 }
 
+int mlx5_fpga_shell_counters(struct mlx5_core_dev *dev, bool clear,
+			     struct mlx5_fpga_shell_counters *data)
+{
+	u32 in[MLX5_ST_SZ_DW(fpga_shell_counters)];
+	u32 out[MLX5_ST_SZ_DW(fpga_shell_counters)];
+	int err;
+
+	memset(in, 0, sizeof(in));
+	MLX5_SET(fpga_shell_counters, in, clear, clear);
+	err = mlx5_core_access_reg(dev, in, sizeof(in), out, sizeof(out),
+				   MLX5_REG_FPGA_SHELL_CNTR, 0, false);
+	if (err)
+		goto out;
+	if (data) {
+		data->ddr_read_requests = MLX5_GET64(fpga_shell_counters, out,
+						     ddr_read_requests);
+		data->ddr_write_requests = MLX5_GET64(fpga_shell_counters, out,
+						      ddr_write_requests);
+		data->ddr_read_bytes = MLX5_GET64(fpga_shell_counters, out,
+						  ddr_read_bytes);
+		data->ddr_write_bytes = MLX5_GET64(fpga_shell_counters, out,
+						   ddr_write_bytes);
+	}
+
+out:
+	return err;
+}

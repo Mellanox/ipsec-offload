@@ -33,11 +33,20 @@
 #ifndef __MLX5_FPGA_H__
 #define __MLX5_FPGA_H__
 
+#include <linux/in6.h>
 #include <linux/mlx5/driver.h>
+
+enum mlx5_fpga_access_type {
+	MLX5_FPGA_ACCESS_TYPE_I2C = 0x0,
+	MLX5_FPGA_ACCESS_TYPE_RDMA,
+	MLX5_FPGA_ACCESS_TYPE_DONTCARE,
+	MLX5_FPGA_ACCESS_TYPE_MAX = MLX5_FPGA_ACCESS_TYPE_DONTCARE,
+};
 
 enum mlx5_fpga_image {
 	MLX5_FPGA_IMAGE_USER = 0,
 	MLX5_FPGA_IMAGE_FACTORY,
+	MLX5_FPGA_IMAGE_MAX = MLX5_FPGA_IMAGE_FACTORY,
 };
 
 enum mlx5_fpga_status {
@@ -86,9 +95,25 @@ struct mlx5_fpga_qp_counters {
 	u64 rx_total_drop;
 };
 
+struct mlx5_fpga_shell_counters {
+	u64 ddr_read_requests;
+	u64 ddr_write_requests;
+	u64 ddr_read_bytes;
+	u64 ddr_write_bytes;
+};
+
 int mlx5_fpga_caps(struct mlx5_core_dev *dev, u32 *caps);
 int mlx5_fpga_query(struct mlx5_core_dev *dev, struct mlx5_fpga_query *query);
+int mlx5_fpga_access_reg(struct mlx5_core_dev *dev, u8 size, u64 addr,
+			 u8 *buf, bool write);
+int mlx5_fpga_sbu_caps(struct mlx5_core_dev *dev, void *caps, int size);
+int mlx5_fpga_load(struct mlx5_core_dev *dev, enum mlx5_fpga_image image);
+int mlx5_fpga_ctrl_op(struct mlx5_core_dev *dev, u8 op);
+int mlx5_fpga_image_select(struct mlx5_core_dev *dev,
+			   enum mlx5_fpga_image image);
 
+int mlx5_fpga_shell_counters(struct mlx5_core_dev *dev, bool clear,
+			     struct mlx5_fpga_shell_counters *data);
 int mlx5_fpga_create_qp(struct mlx5_core_dev *dev,
 			struct mlx5_fpga_qpc *fpga_qpc, u32 *fpga_qpn);
 int mlx5_fpga_modify_qp(struct mlx5_core_dev *dev, u32 fpga_qpn,

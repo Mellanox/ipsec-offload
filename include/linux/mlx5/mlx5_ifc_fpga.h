@@ -113,6 +113,15 @@ struct mlx5_ifc_fpga_cap_bits {
 	u8         reserved_at_500[0x300];
 };
 
+enum {
+	MLX5_FPGA_CTRL_OP_LOAD = 1,
+	MLX5_FPGA_CTRL_OP_RESET = 2,
+	MLX5_FPGA_CTRL_OP_IMAGE_SEL = 3,
+	MLX5_FPGA_CTRL_OP_SB_BYPASS_ON = 4,
+	MLX5_FPGA_CTRL_OP_SB_BYPASS_OFF = 5,
+	MLX5_FPGA_CTRL_OP_RESET_SB = 6,
+};
+
 struct mlx5_ifc_fpga_ctrl_bits {
 	u8         reserved_at_0[0x8];
 	u8         operation[0x8];
@@ -143,6 +152,19 @@ struct mlx5_ifc_fpga_error_event_bits {
 	u8         syndrome[0x8];
 
 	u8         reserved_at_60[0x80];
+};
+
+#define MLX5_FPGA_ACCESS_REG_SIZE_MAX 64
+
+struct mlx5_ifc_fpga_access_reg_bits {
+	u8         reserved_at_0[0x20];
+
+	u8         reserved_at_20[0x10];
+	u8         size[0x10];
+
+	u8         address[0x40];
+
+	u8         data[0][0x8];
 };
 
 enum mlx5_ifc_fpga_qp_state {
@@ -344,6 +366,25 @@ struct mlx5_ifc_fpga_destroy_qp_out_bits {
 	u8         reserved_at_40[0x40];
 };
 
+struct mlx5_ifc_fpga_shell_counters_bits {
+	u8         reserved_0[0x20];
+
+	u8         clear[0x1];
+	u8         reserved_1[0x1f];
+
+	u8         reserved_2[0x40];
+
+	u8         ddr_read_requests[0x40];
+
+	u8         ddr_write_requests[0x40];
+
+	u8         ddr_read_bytes[0x40];
+
+	u8         ddr_write_bytes[0x40];
+
+	u8         reserved_3[0x200];
+};
+
 enum {
 	MLX5_FPGA_SHELL_QP_PACKET_TYPE_DDR_READ            = 0x0,
 	MLX5_FPGA_SHELL_QP_PACKET_TYPE_DDR_WRITE           = 0x1,
@@ -364,6 +405,65 @@ struct mlx5_ifc_fpga_shell_qp_packet_bits {
 	u8         address[0x40];
 
 	u8         data[0][0x8];
+};
+
+struct mlx5_ifc_ipsec_extended_cap_bits {
+	u8         encapsulation[0x20];
+
+	u8         reserved_0[0x15];
+	u8         ipv4_fragment[0x1];
+	u8         ipv6[0x1];
+	u8         esn[0x1];
+	u8         lso[0x1];
+	u8         transport_and_tunnel_mode[0x1];
+	u8         tunnel_mode[0x1];
+	u8         transport_mode[0x1];
+	u8         ah_esp[0x1];
+	u8         esp[0x1];
+	u8         ah[0x1];
+	u8         ipv4_options[0x1];
+
+	u8         auth_alg[0x20];
+
+	u8         enc_alg[0x20];
+
+	u8         sa_cap[0x20];
+
+	u8         reserved_1[0x10];
+	u8         number_of_ipsec_counters[0x10];
+
+	u8         ipsec_counters_addr_low[0x20];
+	u8         ipsec_counters_addr_high[0x20];
+};
+
+struct mlx5_ifc_ipsec_counters_bits {
+	u8         dec_in_packets[0x40];
+
+	u8         dec_out_packets[0x40];
+
+	u8         dec_bypass_packets[0x40];
+
+	u8         enc_in_packets[0x40];
+
+	u8         enc_out_packets[0x40];
+
+	u8         enc_bypass_packets[0x40];
+
+	u8         drop_dec_packets[0x40];
+
+	u8         failed_auth_dec_packets[0x40];
+
+	u8         drop_enc_packets[0x40];
+
+	u8         success_add_sa[0x40];
+
+	u8         fail_add_sa[0x40];
+
+	u8         success_delete_sa[0x40];
+
+	u8         fail_delete_sa[0x40];
+
+	u8         dropped_cmd[0x40];
 };
 
 enum {

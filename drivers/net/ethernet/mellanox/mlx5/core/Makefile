@@ -7,7 +7,7 @@ mlx5_core-y :=	main.o cmd.o debugfs.o fw.o eq.o uar.o pagealloc.o \
 		fs_counters.o rl.o lag.o dev.o gid.o
 
 mlx5_core-$(CONFIG_MLX5_FPGA) += fpga/fpga.o fpga/core.o fpga/qp.o fpga/sdk.o \
-		fpga/trans.o
+		fpga/trans.o fpga/xfer.o fpga/sysfs.o
 
 mlx5_core-$(CONFIG_MLX5_CORE_EN) += wq.o eswitch.o eswitch_offloads.o \
 		en_main.o en_common.o en_fs.o en_ethtool.o en_tx.o \

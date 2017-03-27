@@ -31,37 +31,35 @@
  *
  */
 
-#ifndef MLX5_FPGA_SDK_H
-#define MLX5_FPGA_SDK_H
+#ifndef __MLX5_FPGA_TRANS_H__
+#define __MLX5_FPGA_TRANS_H__
 
-#include <linux/types.h>
-#include <linux/dma-direction.h>
+#include "sdk.h"
+#include "core.h"
 
-struct mlx5_fpga_conn;
-struct mlx5_fpga_device;
+#define MLX5_FPGA_TRANSACTION_MAX_SIZE 1008
+#define MLX5_FPGA_TRANSACTION_SEND_ALIGN_BITS 3
+#define MLX5_FPGA_TRANSACTION_SEND_PAGE_BITS 12
+#define MLX5_FPGA_TID_COUNT 256
 
-struct mlx5_fpga_dma_entry {
-	void *data;
-	unsigned int size;
-	/* Private member */
-	dma_addr_t dma_addr;
+enum mlx5_fpga_direction {
+	MLX5_FPGA_READ,
+	MLX5_FPGA_WRITE,
 };
 
-struct mlx5_fpga_dma_buf {
-	enum dma_data_direction dma_dir;
-	struct mlx5_fpga_dma_entry sg[2];
-	void (*complete)(struct mlx5_fpga_device *fdev,
-			 struct mlx5_fpga_conn *conn,
-			 struct mlx5_fpga_dma_buf *buf, u8 status);
+struct mlx5_fpga_transaction {
+	struct mlx5_fpga_conn *conn;
+	enum mlx5_fpga_direction direction;
+	size_t size;
+	u64 addr;
+	u8 *data;
+	void (*complete)(const struct mlx5_fpga_transaction *complete,
+			 u8 status);
 };
 
-struct mlx5_fpga_conn_attr {
-	unsigned int tx_size;
-	unsigned int rx_size;
-	void (*recv_cb)(void *cb_arg, struct mlx5_fpga_dma_buf *buf);
-	void *cb_arg;
-};
+int mlx5_fpga_trans_device_init(struct mlx5_fpga_device *fdev);
+void mlx5_fpga_trans_device_deinit(struct mlx5_fpga_device *fdev);
+int mlx5_fpga_trans_exec(const struct mlx5_fpga_transaction *trans);
+void mlx5_fpga_trans_recv(void *cb_arg, struct mlx5_fpga_dma_buf *buf);
 
-u64 mlx5_fpga_ddr_size_get(struct mlx5_fpga_device *dev);
-u64 mlx5_fpga_ddr_base_get(struct mlx5_fpga_device *dev);
-#endif /* MLX5_FPGA_SDK_H */
+#endif /* __MLX_FPGA_TRANS_H__ */

@@ -38,6 +38,7 @@
 #include "fpga.h"
 #include "core.h"
 #include "qp.h"
+#include "trans.h"
 
 #define MLX5_FPGA_LOAD_TIMEOUT 20000 /* msec */
 
@@ -148,6 +149,7 @@ again:
 int mlx5_fpga_device_start(struct mlx5_core_dev *mdev)
 {
 	struct mlx5_fpga_device *fdev = mdev->fpga;
+	struct mlx5_fpga_conn_attr conn_attr = {0};
 	unsigned int max_num_qps;
 	int err;
 
@@ -166,6 +168,39 @@ int mlx5_fpga_device_start(struct mlx5_core_dev *mdev)
 	mlx5_core_reserve_gids(mdev, max_num_qps);
 
 	err = mlx5_fpga_qp_init(fdev);
+	if (err)
+		goto out_locked;
+
+	if (MLX5_CAP_FPGA(mdev, shell_caps.qp_type) &
+	    MLX5_FPGA_SHELL_CAPS_QP_TYPE_SHELL_QP) {
+		err = mlx5_fpga_trans_device_init(fdev);
+		if (err) {
+			mlx5_fpga_err(fdev, "Failed to init transaction: %d\n",
+				      err);
+			goto err_qp_init;
+		}
+
+		conn_attr.tx_size = MLX5_FPGA_TID_COUNT;
+		conn_attr.rx_size = MLX5_FPGA_TID_COUNT;
+		conn_attr.recv_cb = mlx5_fpga_trans_recv;
+		conn_attr.cb_arg = fdev;
+		err = mlx5_fpga_qp_conn_create(fdev, &conn_attr,
+					       MLX5_FPGA_QPC_QP_TYPE_SHELL_QP,
+					       &fdev->shell_conn);
+		if (err) {
+			mlx5_fpga_err(fdev, "Failed to create shell conn: %d\n",
+				      err);
+			goto err_trans;
+		}
+	}
+
+err_trans:
+	mlx5_fpga_trans_device_deinit(fdev);
+
+err_qp_init:
+	mlx5_fpga_qp_deinit(fdev);
+
+out_locked:
 	fdev->state = err ? MLX5_FPGA_STATUS_FAILURE : MLX5_FPGA_STATUS_SUCCESS;
 	mutex_unlock(&fdev->mutex);
 	return err;
@@ -208,6 +243,11 @@ void mlx5_fpga_device_stop(struct mlx5_core_dev *mdev)
 	if (fdev->state != MLX5_FPGA_STATUS_SUCCESS)
 		goto out_unlock;
 
+	if (fdev->shell_conn) {
+		mlx5_fpga_qp_conn_destroy(fdev->shell_conn);
+		fdev->shell_conn = NULL;
+		mlx5_fpga_trans_device_deinit(fdev);
+	}
 	mlx5_fpga_qp_deinit(fdev);
 	mlx5_core_reserve_gids(mdev, 0);
 	fdev->state = MLX5_FPGA_STATUS_NONE;

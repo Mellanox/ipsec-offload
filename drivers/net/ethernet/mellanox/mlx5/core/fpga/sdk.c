@@ -31,37 +31,19 @@
  *
  */
 
-#ifndef MLX5_FPGA_SDK_H
-#define MLX5_FPGA_SDK_H
+#include <linux/mlx5/device.h>
 
-#include <linux/types.h>
-#include <linux/dma-direction.h>
+#include "core.h"
+#include "sdk.h"
 
-struct mlx5_fpga_conn;
-struct mlx5_fpga_device;
+u64 mlx5_fpga_ddr_size_get(struct mlx5_fpga_device *fdev)
+{
+	return (u64)MLX5_CAP_FPGA(fdev->mdev, fpga_ddr_size) << 10;
+}
+EXPORT_SYMBOL(mlx5_fpga_ddr_size_get);
 
-struct mlx5_fpga_dma_entry {
-	void *data;
-	unsigned int size;
-	/* Private member */
-	dma_addr_t dma_addr;
-};
-
-struct mlx5_fpga_dma_buf {
-	enum dma_data_direction dma_dir;
-	struct mlx5_fpga_dma_entry sg[2];
-	void (*complete)(struct mlx5_fpga_device *fdev,
-			 struct mlx5_fpga_conn *conn,
-			 struct mlx5_fpga_dma_buf *buf, u8 status);
-};
-
-struct mlx5_fpga_conn_attr {
-	unsigned int tx_size;
-	unsigned int rx_size;
-	void (*recv_cb)(void *cb_arg, struct mlx5_fpga_dma_buf *buf);
-	void *cb_arg;
-};
-
-u64 mlx5_fpga_ddr_size_get(struct mlx5_fpga_device *dev);
-u64 mlx5_fpga_ddr_base_get(struct mlx5_fpga_device *dev);
-#endif /* MLX5_FPGA_SDK_H */
+u64 mlx5_fpga_ddr_base_get(struct mlx5_fpga_device *fdev)
+{
+	return MLX5_CAP64_FPGA(fdev->mdev, fpga_ddr_start_addr);
+}
+EXPORT_SYMBOL(mlx5_fpga_ddr_base_get);

@@ -36,6 +36,7 @@
 #ifdef CONFIG_MLX5_FPGA
 
 #include "fpga.h"
+#include "sdk.h"
 
 /* Represents an Innova device */
 struct mlx5_fpga_device {
@@ -46,6 +47,11 @@ struct mlx5_fpga_device {
 	enum mlx5_fpga_status state;
 	enum mlx5_fpga_image last_admin_image;
 	enum mlx5_fpga_image last_oper_image;
+
+	struct mlx5_fpga_conn *shell_conn;
+
+	/* Transactions state */
+	struct mlx5_fpga_trans_device_state *trans;
 
 	/* Parameters for QPs */
 	u16 pkey_index;

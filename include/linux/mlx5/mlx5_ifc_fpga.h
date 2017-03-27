@@ -32,6 +32,11 @@
 #ifndef MLX5_IFC_FPGA_H
 #define MLX5_IFC_FPGA_H
 
+enum {
+	MLX5_FPGA_SHELL_CAPS_QP_TYPE_SHELL_QP    = 0x1,
+	MLX5_FPGA_SHELL_CAPS_QP_TYPE_SANDBOX_QP  = 0x2,
+};
+
 struct mlx5_ifc_fpga_shell_caps_bits {
 	u8         max_num_qps[0x10];
 	u8         reserved_at_10[0x8];
@@ -337,6 +342,28 @@ struct mlx5_ifc_fpga_destroy_qp_out_bits {
 	u8         syndrome[0x20];
 
 	u8         reserved_at_40[0x40];
+};
+
+enum {
+	MLX5_FPGA_SHELL_QP_PACKET_TYPE_DDR_READ            = 0x0,
+	MLX5_FPGA_SHELL_QP_PACKET_TYPE_DDR_WRITE           = 0x1,
+	MLX5_FPGA_SHELL_QP_PACKET_TYPE_DDR_READ_RESPONSE   = 0x2,
+	MLX5_FPGA_SHELL_QP_PACKET_TYPE_DDR_WRITE_RESPONSE  = 0x3,
+};
+
+struct mlx5_ifc_fpga_shell_qp_packet_bits {
+	u8         version[0x4];
+	u8         syndrome[0x4];
+	u8         reserved_at_8[0x4];
+	u8         type[0x4];
+	u8         reserved_at_10[0x8];
+	u8         tid[0x8];
+
+	u8         len[0x20];
+
+	u8         address[0x40];
+
+	u8         data[0][0x8];
 };
 
 #endif /* MLX5_IFC_FPGA_H */
